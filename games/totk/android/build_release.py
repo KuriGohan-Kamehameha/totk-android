@@ -5,6 +5,7 @@
                                                 [--key-pass-env VAR] [--work DIR] [-o totk-native.apk]
                                                 [--translator <android-arm64 totk_xlate>] [--android-sdk SDK]
                                                 [--version-code N] [--version-name X]   (default 1.0.0 / 10000)
+                                                [--package ID] [--label NAME]   (a fork: its own app id and launcher name)
     python3 games/totk/android/build_release.py --audit <apk>        (only the content audit)
 
 What goes in (all built here, or fetched at pinned sources, except the two prebuilt inputs named below):
@@ -67,6 +68,8 @@ def parse_args(argv):
     ap.add_argument('--android-sdk', type=Path, help='Android SDK (default ANDROID_HOME, ANDROID_SDK_ROOT, ~/Android/Sdk)')
     ap.add_argument('--version-code', type=int, help='default: from the version name, MAJOR*10000 + MINOR*100 + PATCH')
     ap.add_argument('--version-name', help=f'default: {APP_VERSION}')
+    ap.add_argument('--package', help='app id of a fork\'s build (default: the official com.aure.totk); it installs beside the official app')
+    ap.add_argument('--label', help='launcher name of a fork\'s build (default: TotK Native)')
     ap.add_argument('--jobs', type=int, default=os.cpu_count() or 4)
     args = ap.parse_args(argv)
     if not args.audit:
@@ -321,7 +324,7 @@ def verify_signatures(apk, logs, sdk=None):
 
 
 def package(*, out, dex, libs, translator, turnip, assets, key, key_pass_env=None, make_key=False, release, version_code,
-            version_name, timestamp=None, logs, android_sdk=None):
+            version_name, timestamp=None, logs, android_sdk=None, package_id=None, label=None):
     """Sign the APK with build_apk.py, verify each signature scheme and audit it; a failure removes the APK."""
     libs = list(libs) + ([turnip] if turnip else [])
     if turnip:   # packed under the name the runtime looks for beside libtotk.so
@@ -341,6 +344,8 @@ def package(*, out, dex, libs, translator, turnip, assets, key, key_pass_env=Non
            '--version-code', str(version_code), '--version-name', version_name, '--min-sdk', str(API), '--target-sdk', str(API)]
     cmd += (['--key-pass-env', key_pass_env] if key_pass_env else []) + (['--make-key'] if make_key else [])
     cmd += (['--release'] if release else []) + (['--timestamp', str(timestamp)] if timestamp is not None else [])
+    # A fork's build: another app id installs beside the official app (and makes no update checks: UpdateRules), under its own name.
+    cmd += (['--package', package_id] if package_id else []) + (['--label', label] if label else [])
     run(cmd, logs / 'build_apk.log')
     try:
         schemes = verify_signatures(out, logs, android_sdk)
@@ -363,7 +368,7 @@ def audit_entries(apk):
 
 
 def app(*, work, ndk, logs, out, key, key_pass_env=None, make_key=False, release=True, turnip=None, translator=None,
-        android_sdk=None, version_code=None, version_name=None, jobs=os.cpu_count() or 4):
+        android_sdk=None, version_code=None, version_name=None, jobs=os.cpu_count() or 4, package_id=None, label=None):
     """The whole app from the repository: native libraries, translator, dex, assets, signed and audited APK. Shared by the
     public release (release=True, the caller's key and the pinned Turnip) and build_android.py --apk (a debuggable build
     signed with the work folder's developer key)."""
@@ -380,7 +385,7 @@ def app(*, work, ndk, logs, out, key, key_pass_env=None, make_key=False, release
     return package(out=out, dex=dex, libs=libs, translator=xlate, turnip=check_turnip(turnip) if turnip else None, assets=assets,
                    key=key, key_pass_env=key_pass_env, make_key=make_key, release=release,
                    version_code=version_code or (int(time.time()) // 60 if make_key else semver_code(name)),
-                   version_name=name, timestamp=stamp, logs=logs, android_sdk=android_sdk)
+                   version_name=name, timestamp=stamp, logs=logs, android_sdk=android_sdk, package_id=package_id, label=label)
 
 
 def source_commit():
@@ -416,7 +421,7 @@ def main(argv):
     t0 = time.time()
     app(work=work, ndk=ndk, logs=logs, out=out, key=key, key_pass_env=args.key_pass_env, release=True, turnip=turnip,
         translator=args.translator, android_sdk=args.android_sdk, version_code=args.version_code, version_name=args.version_name,
-        jobs=args.jobs)
+        jobs=args.jobs, package_id=args.package, label=args.label)
     say(f'done in {(time.time() - t0) / 60:.0f} min: {out} (sha256 {sha256(out)})')
 
 

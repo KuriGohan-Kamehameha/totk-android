@@ -268,7 +268,7 @@ $(addprefix $(OUT)/,vktest vkdrawtest vkrecspantest vkpipetest vkdrawtest-app vk
 vktest: $(OUT)/vkpositiontest
 .PHONY: vkpositiontest
 vkpositiontest: $(OUT)/vkpositiontest
-$(OUT)/vkpositiontest: $(TOTK)/android/gfx/test_vk_position.c $(TOTK)/android/gfx/vk_position.h $(TOTK)/android/gfx/vk_seed_pack.h
+$(OUT)/vkpositiontest: $(TOTK)/android/gfx/test_vk_position.c $(TOTK)/android/gfx/vk_position.h $(TOTK)/android/gfx/vk_varyings.h $(TOTK)/android/gfx/vk_seed_pack.h
 	@mkdir -p $(dir $@)
 	$(CC) -std=c11 -D_GNU_SOURCE -O1 -g $(WARN) -o $@ $<
 $(addprefix $(OUT)/,vktest vkdrawtest vkrecspantest vkpipetest vkdrawtest-app vkoverlaytest vkposttest vkframegentest vknativeuitest vkxlatetest vkpcachetest poolfintest vkreplaypintest vkrectest vkcanvastest): $(TOTK)/android/gfx/vk_position.h

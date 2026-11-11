@@ -250,4 +250,30 @@ done:
 #undef POS_NEED
     return result;
 }
+/* TOTK_VK_NAN_MINMAX (vk_shader.c; default on, 0 = off): the Switch's NaN rules for min / max / saturate. Maxwell FMNMX
+   returns the operand that is not NaN and a saturated (.SAT) NaN is 0; the translator (Ryujinx) emits GLSL.std.450 FMin /
+   FMax / FClamp, whose result is undefined for a NaN operand (Adreno passes the NaN on). NMin / NMax / NClamp are defined
+   exactly as Maxwell (NClamp(NaN, 0, 1) = 0) and take the same operands, so each is swapped in place: same word count,
+   no re-translation. Returns the number of instructions changed, or -1 when the module is malformed (then nothing is
+   changed). */
+static inline int vk_spirv_nan_minmax(uint32_t *w, size_t nw) {
+    if (nw < 5 || w[0] != 0x07230203) return -1;
+    uint32_t glsl = 0;
+    for (size_t i = 5; i < nw; i += w[i] >> 16) {
+        uint32_t n = w[i] >> 16, op = w[i] & 0xffff;
+        if (!n || n > nw - i) return -1;
+        if (op == 11 && n >= 4 && !memcmp(&w[i + 2], "GLSL.std.450", 12)) glsl = w[i + 1];   /* OpExtInstImport */
+    }
+    if (!glsl) return 0;
+    int changed = 0;
+    for (size_t i = 5; i < nw; i += w[i] >> 16) {
+        uint32_t n = w[i] >> 16, op = w[i] & 0xffff;
+        if (op != 12 || n < 5 || w[i + 3] != glsl) continue;   /* OpExtInst type id set instruction operands... */
+        uint32_t *e = &w[i + 4];
+        if (*e == 37) { *e = 79; changed++; }        /* FMin -> NMin */
+        else if (*e == 40) { *e = 80; changed++; }   /* FMax -> NMax */
+        else if (*e == 43) { *e = 81; changed++; }   /* FClamp -> NClamp */
+    }
+    return changed;
+}
 #endif

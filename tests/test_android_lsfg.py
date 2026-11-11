@@ -1,6 +1,7 @@
 """The import of the player's own Lossless.dll for the LSFG frame-generation engine (LsfgImport.java) on a host JVM:
 where it lands, what is refused, and that a refused or interrupted import leaves the earlier file alone."""
 from pathlib import Path
+import re
 import shutil
 import struct
 import subprocess
@@ -17,6 +18,21 @@ def dll(size=300_000, pe=0x80):
     data = bytearray(b'MZ' + b'\0' * 58 + struct.pack('<I', pe))
     data += b'\0' * (pe - len(data)) + b'PE\0\0' + b'\x64\x86'
     return bytes(data) + bytes(range(256)) * ((size - len(data)) // 256 + 1)
+
+
+class RequestCodes(unittest.TestCase):
+    def test_the_pickers_and_the_updater_do_not_share_a_request_code(self):
+        """onActivityResult tells its callers apart by request code alone: a picker that shares the updater's code is
+        answered as the updater's and its file is dropped."""
+        setup = GAME / 'android/java/com/aure/totk/setup'
+        text = (setup / 'SetupActivity.java').read_text(encoding='utf-8') + (setup / 'UpdateInstaller.java').read_text(encoding='utf-8')
+        codes = re.findall(r'\b(REQ_[A-Z_]+|REQUEST_SOURCES) = (\d+)', text)
+        names = [name for name, _ in codes]
+        self.assertIn('REQ_LSFG', names)
+        self.assertIn('REQUEST_SOURCES', names)
+        self.assertEqual(len(names), len(set(names)))
+        fixed = sorted(int(value) for name, value in codes if name != 'REQ_PICK')   # REQ_PICK is the base of a range below 900
+        self.assertEqual(len(fixed), len(set(fixed)), codes)
 
 
 class LsfgImportTests(unittest.TestCase):

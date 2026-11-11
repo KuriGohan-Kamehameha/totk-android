@@ -83,7 +83,7 @@ public final class SetupActivity extends Activity implements SetupService.Listen
     static final String EXTRA_UPDATE_AUTH = "com.aure.totk.setup.UPDATE_AUTH";
     private static final String[] ALL_ROLES = {"romfs", "exefs", "base", "update", "keys"};
     private static final int REQ_PICK = 100, REQ_DRIVER = 900, REQ_NOTIFY = 901, REQ_EXPORT = 902, REQ_IMPORT_ZIP = 903, REQ_IMPORT_TREE = 904, REQ_MIRROR = 905,
-            REQ_DATA_FOLDER = 906, REQ_ACCESS = 907, REQ_LSFG = 908, REQ_MODS_ZIP = 909, REQ_MODS_TREE = 910;
+            REQ_DATA_FOLDER = 906, REQ_ACCESS = 907, REQ_MODS_ZIP = 909, REQ_MODS_TREE = 910, REQ_LSFG = 911;   // 908 is UpdateInstaller.REQUEST_SOURCES
     private static final String[] TABS = {Settings.PERFORMANCE, Settings.PICTURE, Settings.SCREEN};
 
     private enum Screen { WELCOME, SETUP_STORAGE, ROUTE, FILES, UPDATES, UPDATE_DOWNLOAD, INSTALL, ERROR, INTERRUPTED, HOME, GRAPHICS, CONTROLS, DATA, STORAGE, ABOUT, LICENSES,
@@ -1816,7 +1816,7 @@ public final class SetupActivity extends Activity implements SetupService.Listen
                 outcome = Strings.gameLockError(failed.toString());
             }
             String message = outcome;
-            main.post(() -> { note = message == null ? "" : message; if (screen == Screen.DATA) render(); });
+            main.post(() -> { note = message == null ? "" : message; noteOk = false; if (screen == Screen.DATA) render(); });
         });
     }
 

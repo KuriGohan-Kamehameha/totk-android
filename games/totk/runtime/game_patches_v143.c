@@ -1,6 +1,7 @@
 /* 1.4.3 has a new compiler and frame-controller layout. Every adapted game-code
    site below is checked before any write; older versions use game_patches.c. */
 #include "aspect_patch.h"
+#include "mod_ips.h"
 #include "code_guard.h"
 #include "game_patches.h"
 #include "game_version.h"
@@ -1073,6 +1074,9 @@ static void patch_render_res(Module *m);
 void runtime_game_patches(Module *m) {
     runtime_survey_init(m);
     if (strcmp(m->name, "main")) runtime_fail("1.4.3 game patches expect main");
+#if !TARGET_OS_IPHONE   /* the phone's code is signed as built: nothing is patched at start */
+    mod_ips_load(m);   /* a mod's IPS files for this main (mod_ips.h), before this runtime's own patches check their original words */
+#endif
     patch_bench_time(m);
     patch_realtime(m);
     patch_output_res(m);

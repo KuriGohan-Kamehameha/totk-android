@@ -5,6 +5,8 @@
 #include "game_version.h"
 #include "fs_host.h"
 #include "romfs_path.h"
+#include "romfs_scan.h"
+#include "mod_ips.h"   /* mod_exefs_dir */
 #include "host_os.h"   /* SHA-256: CommonCrypto on Darwin */
 #include "totk_drs.h"
 #if !defined(__APPLE__)
@@ -62,7 +64,8 @@ static uint64_t handles[NH]; /* file index + 1; 0 is free */
    original stops the start. The directories, in this order: the build's patches (scripts/make_romfs_patches.py;
    TOTK_ROMFS_PATCHES, default extracted/<version>/romfs-patches, 0 = none), the true-2K HeapDef overlay
    (scripts/make_output_res_overlay.py) and the player's mods (TOTK_ROMFS_MODS, which the launcher sets to
-   <data>/mods/<version>; no manifest there = none). Each file can be replaced once. An overlay file is opened when the
+   <data>/mods/<version> and the Android app to the first mods/<version> it finds, frontend_android.c; no manifest there =
+   none, unless it holds a mod manager's romfs/ folder, which mods_load scans instead). Each file can be replaced once. An overlay file is opened when the
    game opens it, so a mod can replace thousands of files (a dub's voice streams) without holding a descriptor each; the
    file's identity (device, inode, size, modification time) is kept from the start check, and an open that finds another
    file there stops the game instead of serving bytes nobody checked. scripts/make_mod_manifest.py writes a mod's manifest.
@@ -219,6 +222,64 @@ static void overlay_load(const char *dir,int required) {
  if(noverlay-first>16)fprintf(stderr,"[totk] RomFS overlay: %zu files from %s (%zu more not listed)\n",noverlay-first,dir,noverlay-first-16);
  if(noverlay>first)fprintf(stderr,"[totk] RomFS overlay: %s checked, %zu files, %.1f MB hashed in %.2f s\n",dir,noverlay-first,hashed/1048576.0,(runtime_now_ns()-t0)/1e9);
 }
+/* A mods folder that has no manifest.tsv but holds a romfs/ folder is a mod manager's merged output (TKMM writes romfs/
+   and exefs/ side by side; copy both into <data>/mods/<version>). Every file under romfs/ is served under its RomFS path:
+   it replaces the original of that path, or is added when the RomFS has none. Nothing is hashed, so thousands of files
+   cost one lstat each, and there is no original hash to compare: the manager merged against the player's own dump. The
+   open-time identity check is the one a manifest's files get. Desktop leftovers (dot entries, desktop.ini, Thumbs.db),
+   links and names no RomFS path can have are left out; the walk never leaves the folder (romfs_scan.h). A file one of
+   this build's own overlays already replaces (the true-2K HeapDef, the quick-menu timing) stops the start, as two
+   manifests would: either copy alone would drop what the other needs (the mod's heap sizes, the build's), so the log
+   names the file and both ways out. Paths are case-sensitive: a file whose path differs from the RomFS's only in case
+   counts as added and the game never opens it, so the first added paths are logged. */
+typedef struct { size_t first,replaced,added;uint64_t bytes; } ModScan;
+static int scan_visit(void *user,const char *rel,const char *file,const struct stat *st) {
+ ModScan *s=user;uint64_t i=lower(rel);int known=i<file_count&&!strcmp(entry_name(entry(i)),rel);
+ if(known)for(size_t k=0;k<s->first;k++)if(overlays[k].index==i){
+  fprintf(stderr,"[totk] RomFS mods: %s replaces %s, which this build already replaces with its own %s. Remove that file from the mods folder, or turn off the option that needs the build's copy (a 2560x1440 output or a scene above 1600x900 for the HeapDef; TOTK_ROMFS_PATCHES=0 for the build's patches)\n",file,rel,overlays[k].path);
+  runtime_fail("RomFS mods: the merge replaces a file this build replaces itself (see the log)");}
+ if(noverlay==overlay_cap){overlay_cap=overlay_cap?overlay_cap*2:16;overlays=realloc(overlays,overlay_cap*sizeof(*overlays));need(overlays!=NULL,"RomFS overlay table");}
+ char *copy=strdup(file),*name=strdup(rel);need(copy&&name,"RomFS overlay path copy");
+ overlays[noverlay++]=(Overlay){known?i:ADDED,(uint64_t)st->st_size,copy,st->st_dev,st->st_ino,st->st_mtimespec,name,NULL};
+ if(known)s->replaced++;else if(s->added++<8)fprintf(stderr,"[totk] RomFS mods: %s is added (the RomFS has no file of that path)\n",rel);
+ s->bytes+=(uint64_t)st->st_size;return 0;
+}
+/* exefs/ beside romfs/: code mods. IPS patches of main are applied by the game patches (mod_ips.h). Code modules
+   (subsdk files, exlaunch mods) are not loaded: the loader maps the three rewritten modules only, so naming what is
+   there explains a mod whose code half is missing. */
+static void mods_exefs_note(const char *mods) {
+ char p[4200],names[256]="";if(!mod_exefs_dir(mods,p,sizeof(p)))return;DIR *d=opendir(p);if(!d)return;
+ unsigned count=0;size_t used=0;struct dirent *e;
+ while((e=readdir(d))){size_t len=strlen(e->d_name);
+  if(romfs_scan_junk(e->d_name)||!strcmp(e->d_name,"main.npdm")||(len>4&&!strcasecmp(e->d_name+len-4,".ips")))continue;
+  if(count++<6){int n=snprintf(names+used,sizeof(names)-used,"%s%.40s",used?", ":"",e->d_name);if(n>0&&(size_t)n<sizeof(names)-used)used+=(size_t)n;}}
+ closedir(d);
+ if(count)fprintf(stderr,"[totk] RomFS mods: %s holds %u code mod file%s (%s%s) that this port does not load: RomFS files and IPS patches of main are used, so a mod that needs a code module may misbehave\n",p,count,count==1?"":"s",names,count>6?", ...":"");
+}
+/* 1 when dir holds a manifest.tsv, which is then loaded and decides everything: a manifest that is there but cannot be
+   read or parsed stops the start and never falls back to scanning, and one without lines means no mod. */
+static int mods_manifest(const char *dir) {
+ char p[4200];struct stat st;need(snprintf(p,sizeof(p),"%s/manifest.tsv",dir)<(int)sizeof(p),"RomFS mods path");
+ if(lstat(p,&st))return 0;
+ if(access(p,R_OK)){fprintf(stderr,"[totk] RomFS mods: %s cannot be read: %s\n",p,strerror(errno));runtime_fail("RomFS mods: manifest.tsv is there but cannot be read (see the log)");}
+ overlay_load(dir,0);return 1;
+}
+/* The mods folder, in this order: its manifest.tsv (loose files under their RomFS paths); the manifest.tsv inside its
+   romfs/ folder (a merge someone wrote a manifest for: paths relative to romfs/); else romfs/ is scanned. */
+static void mods_load(const char *mods) {
+ char p[4200];struct stat st;
+ if(mods_manifest(mods)){mods_exefs_note(mods);return;}
+ need(snprintf(p,sizeof(p),"%s/romfs",mods)<(int)sizeof(p),"RomFS mods path");
+ if(lstat(p,&st)){overlay_load(mods,0);return;}   /* neither a manifest nor romfs/: logs "none" */
+ if(!S_ISDIR(st.st_mode)){fprintf(stderr,"[totk] RomFS mods: %s is not a folder (a link is not followed); copy the merged romfs folder itself there\n",p);runtime_fail("RomFS mods: romfs is not a folder (see the log)");}
+ if(mods_manifest(p)){mods_exefs_note(mods);return;}
+ ModScan s={.first=noverlay};RomfsScanCounts c;uint64_t t0=runtime_now_ns();
+ if(romfs_scan_tree(p,scan_visit,&s,&c)){fprintf(stderr,"[totk] RomFS mods: reading %s failed: %s\n",p,strerror(errno));runtime_fail("RomFS mods folder could not be read (see the log)");}
+ if(s.added>8)fprintf(stderr,"[totk] RomFS mods: %zu more added files not listed\n",s.added-8);
+ fprintf(stderr,"[totk] RomFS mods: %s scanned (no manifest.tsv): %zu files replace originals, %zu added; skipped %lu desktop leftovers, %lu links or special files, %lu invalid names; %.1f MB in %.2f s\n",
+  p,s.replaced,s.added,c.junk,c.special,c.invalid,s.bytes/1048576.0,(runtime_now_ns()-t0)/1e9);
+ mods_exefs_note(mods);
+}
 static int overlay_order(const void *a,const void *b) {uint64_t x=((const Overlay *)a)->index,y=((const Overlay *)b)->index;return (x>y)-(x<y);}
 static int added_order(const void *a,const void *b) {const Overlay *x=*(Overlay *const *)a,*y=*(Overlay *const *)b;return strcmp(x->name,y->name);}
 /* Number the added files in path order after the RomFS's own (file_count + k); two overlays adding one path stop the start. */
@@ -290,7 +351,7 @@ static void overlay_init(const char *romfs_dir) {
   if(access(m,R_OK)){fprintf(stderr,"[totk] RomFS overlay %s missing: make it with\n  .venv/bin/python scripts/make_output_res_overlay.py %ux%u%s%s --version " TOTK_GAME_DIR "%s%s\n",d,w,h,*scene?" --scene ":"",*scene?scene+7:"",out?" --output-root ":"",out?out:"");
    runtime_fail("HeapDef overlay for this output / scene size missing (see the line above)");}
   overlay_load(d,1);}
- const char *mods=getenv("TOTK_ROMFS_MODS");if(mods&&*mods&&strcmp(mods,"0"))overlay_load(mods,0);
+ const char *mods=getenv("TOTK_ROMFS_MODS");if(mods&&*mods&&strcmp(mods,"0"))mods_load(mods);
  drs_init(romfs_dir);
  added_init();
  if(noverlay)qsort(overlays,noverlay,sizeof(*overlays),overlay_order);

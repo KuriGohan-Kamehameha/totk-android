@@ -83,7 +83,7 @@ public final class SetupActivity extends Activity implements SetupService.Listen
     static final String EXTRA_UPDATE_AUTH = "com.aure.totk.setup.UPDATE_AUTH";
     private static final String[] ALL_ROLES = {"romfs", "exefs", "base", "update", "keys"};
     private static final int REQ_PICK = 100, REQ_DRIVER = 900, REQ_NOTIFY = 901, REQ_EXPORT = 902, REQ_IMPORT_ZIP = 903, REQ_IMPORT_TREE = 904, REQ_MIRROR = 905,
-            REQ_DATA_FOLDER = 906, REQ_ACCESS = 907;
+            REQ_DATA_FOLDER = 906, REQ_ACCESS = 907, REQ_MODS_ZIP = 909, REQ_MODS_TREE = 910;
     private static final String[] TABS = {Settings.PERFORMANCE, Settings.PICTURE, Settings.SCREEN};
 
     private enum Screen { WELCOME, SETUP_STORAGE, ROUTE, FILES, UPDATES, UPDATE_DOWNLOAD, INSTALL, ERROR, INTERRUPTED, HOME, GRAPHICS, CONTROLS, DATA, STORAGE, ABOUT, LICENSES,
@@ -150,7 +150,7 @@ public final class SetupActivity extends Activity implements SetupService.Listen
     private Widgets.Chip statusChip;
     private TextView statusLine, storageText, extrasNote;
     /** note is a confirmation (green dot), not a warning. */
-    private boolean noteOk;
+    private boolean noteOk, modsBusy;
     /** Why the last settings.env write before starting the game failed. */
     private String envError = "";
     /** seedRefused: a start was refused because the shader seed on disk is missing or empty (Home then offers Build
@@ -1514,7 +1514,13 @@ public final class SetupActivity extends Activity implements SetupService.Listen
         statusChip = header("data", Strings.GAME_DATA, noteOk ? Widgets.Chip.OK : Widgets.Chip.WARN, note.isEmpty() ? null : note);
         InstallState install = InstallState.read(this);
         boolean installed = install.installed();
-        Widgets.Panel list = panel(80, 186, 1040, 720, false, 28, 24);
+        Widgets.Panel listPanel = panel(80, 186, 1040, 720, false, 28, 24);
+        listPanel.setClipChildren(true);   // the scrolled list must stay inside the panel: there are more rows than fit
+        ScrollView dataScroll = new ScrollView(this);
+        dataScroll.setVerticalScrollBarEnabled(false); dataScroll.setClipToPadding(false);
+        LinearLayout list = Widgets.column(this);
+        dataScroll.addView(list);
+        listPanel.addView(dataScroll, new LinearLayout.LayoutParams(-1, 0, 1));
         Widgets.Row installedRow = dataRow(list, "installed", Strings.INSTALLED, installed ? Strings.setupFormat(install.setupVersion(), install.route()) : Strings.NOT_INSTALLED,
                 installed ? Strings.size(dataBytes()) + " · " + Strings.VERIFIED : Strings.NOT_INSTALLED, installed ? Theme.ZONAI : Theme.AMBER, null);
         boolean missing = !StorageLocation.available(this);
@@ -1550,6 +1556,14 @@ public final class SetupActivity extends Activity implements SetupService.Listen
         reset.dimmed(missing || !driver.isFile());
         gameControl(driverRow, "Changing the driver", this::pickDriver);
         gameControl(reset, "Changing the driver", this::resetDriver);
+        // Mods live in the app's private files (ModImport), so they do not depend on where the game data is.
+        if (!modsBusy) ModImport.recover(getFilesDir());   // an import that died between its two renames
+        ModImport.Summary mods = ModImport.read(getFilesDir());
+        Widgets.Row modsRow = dataRow(list, "mods", Strings.MODS_ROW, Strings.MODS_HINT,
+                modsBusy ? Strings.MODS_IMPORTING : mods == null ? Strings.MODS_NONE : Strings.modsState(mods.files, mods.bytes, mods.modules.size()),
+                mods == null ? Theme.TEXT3 : Theme.ZONAI, v -> chooseMods());
+        modsRow.dimmed(modsBusy);
+        gameControl(modsRow, "Changing the mods", this::chooseMods);
         if (missing && StorageLocation.accessLost(this))
             dataRow(list, "access", Strings.ACCESS_FIX_ROW, Strings.ACCESS_FIX_HINT, Strings.ACCESS_OFF, Theme.WARN, v -> openAccessSettings());
         else if (missing) dataRow(list, "again", Strings.SETUP_AGAIN_ROW, Strings.SETUP_AGAIN_HINT, "", Theme.TEXT3, v -> go(Screen.STORAGE));
@@ -1597,6 +1611,17 @@ public final class SetupActivity extends Activity implements SetupService.Listen
             case "companion": detailText.setText((SettingsStore.secondaryDisplay(this) ? "" : Strings.ART_NOT_NEEDED + ". ") + Strings.COMPANION_TEXT); break;
             case "shaders": detailText.setText(Strings.SHADERS_TEXT); break;
             case "driver": case "driver-reset": detailText.setText(Strings.DRIVER_TEXT); break;
+            case "mods": {
+                detailText.setText(Strings.MODS_TEXT);
+                ModImport.Summary mods = ModImport.read(getFilesDir());
+                if (gameFile("mods/" + ModImport.VERSION).isDirectory()) fact(Strings.MODS_BY_HAND, Strings.MODS_BY_HAND_NOTE);
+                if (mods == null) break;
+                fact(Strings.MODS_FILES, mods.files + " · " + Strings.bytes(mods.bytes));
+                if (mods.patches > 0) fact(Strings.MODS_PATCHES, mods.patches + " · " + Strings.MODS_PATCHES_NOTE);
+                if (!mods.modules.isEmpty()) fact(Strings.MODS_MODULES, mods.modules.size() + " · " + Strings.MODS_MODULES_NOTE);
+                if (!mods.source.isEmpty()) fact(Strings.MODS_SOURCE, mods.source);
+                break;
+            }
             case "rerun": detailText.setText(Strings.RERUN_TEXT); break;
             default: detailText.setText(Strings.DELETE_TEXT);
         }
@@ -1643,6 +1668,110 @@ public final class SetupActivity extends Activity implements SetupService.Listen
             String message = outcome;
             main.post(() -> { note = message == null ? "" : message; if (screen == Screen.DATA) render(); });
         });
+    }
+
+    // ---------- mods ----------
+    private void chooseMods() {
+        if (modsBusy) return;
+        List<Object[]> options = new ArrayList<>();
+        options.add(new Object[]{"mods:tree", Strings.MODS_TREE, Strings.MODS_TREE_HINT, false, (Runnable) () -> pickMods(true)});
+        options.add(new Object[]{"mods:zip", Strings.MODS_ZIP, Strings.MODS_ZIP_HINT, false, (Runnable) () -> pickMods(false)});
+        if (ModImport.read(getFilesDir()) != null)
+            options.add(new Object[]{"mods:remove", Strings.MODS_REMOVE, Strings.MODS_REMOVE_HINT, true, (Runnable) this::removeMods});
+        openChoice("data", Strings.MODS_ROW, Strings.MODS_FROM, Strings.MODS_BODY, options.toArray(new Object[0][]));
+    }
+    private void pickMods(boolean tree) {
+        if (!needGameClosed("Changing the mods", () -> pickMods(tree))) return;
+        if (screen == Screen.CHOICE) back();
+        Intent intent = tree ? new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                : new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try { startActivityForResult(intent, tree ? REQ_MODS_TREE : REQ_MODS_ZIP); } catch (ActivityNotFoundException missing) { showNote(Strings.PICKER_MISSING); }
+    }
+    private void removeMods() {
+        if (!needGameClosed("Changing the mods", this::removeMods)) return;
+        if (modsBusy) return;
+        if (screen == Screen.CHOICE) back();
+        modsWork(Strings.MODS_REMOVING, () -> {
+            try (GameLock.Hold held = GameLock.hold(getFilesDir())) {
+                held.requireFree();
+                return ModImport.remove(getFilesDir()) ? ok(Strings.MODS_REMOVED) : failed(Strings.MODS_NOT_REMOVED);
+            } catch (IOException locked) { return failed(Strings.gameLockError(locked.toString())); }
+        });
+    }
+    private static String[] ok(String message) { return new String[]{message, "ok"}; }
+    private static String[] failed(String message) { return new String[]{message, null}; }
+    /** Run an import or a removal on the worker and show its outcome (ok(...) or failed(...)) on the Game data screen. */
+    private void modsWork(String busyNote, java.util.concurrent.Callable<String[]> task) {
+        modsBusy = true; note = busyNote; noteOk = true;
+        if (screen == Screen.DATA) render();
+        try {
+            worker.execute(() -> {
+                String[] outcome;
+                try { outcome = task.call(); } catch (Exception unexpected) { outcome = failed(Strings.modsError("", unexpected.toString())); }
+                String[] result = outcome;
+                main.post(() -> { modsBusy = false; note = result[0]; noteOk = result[1] != null; if (screen == Screen.DATA) render(); });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException closing) {
+            modsBusy = false; note = ""; noteOk = false;
+        }
+    }
+    /** Copy the picked folder or zip into <private files>/mods/<version> (ModImport): the game uses it from its next start. */
+    private void installMods(Uri uri, boolean tree) {
+        if (!needGameClosed("Changing the mods", () -> installMods(uri, tree))) return;
+        if (modsBusy) return;
+        ContentResolver resolver = getContentResolver();
+        modsWork(Strings.MODS_IMPORTING, () -> {
+            String source = tree ? treeName(uri) : Inputs.describe(resolver, uri).name;
+            try (GameLock.Hold held = GameLock.hold(getFilesDir())) {
+                held.requireFree();
+                try (ModImport.Session session = new ModImport.Session(getFilesDir(), source)) {
+                    if (tree) {
+                        String path = FileAccess.granted() ? FileAccess.treePath(this, uri) : null;   // its real path with All files access
+                        if (path != null && new File(path).isDirectory()) ModImport.addTree(session, new File(path));
+                        else addDocumentTree(resolver, uri, android.provider.DocumentsContract.getTreeDocumentId(uri), "", session, 0);
+                    } else {
+                        File direct = FileAccess.directFile(this, uri, -1);
+                        InputStream in = direct != null ? new java.io.FileInputStream(direct) : resolver.openInputStream(uri);
+                        if (in == null) throw new IOException("unreadable");
+                        ModImport.addZip(session, in);
+                    }
+                    ModImport.Summary done = session.commit();
+                    return ok("Imported " + Strings.modsState(done.files, done.bytes, done.modules.size()));
+                }
+            } catch (ModImport.Invalid invalid) {
+                return failed(Strings.modsError(invalid.code, invalid.getMessage()));
+            } catch (IOException | RuntimeException error) {
+                return failed(Strings.modsError("", error.toString()));
+            }
+        });
+    }
+    /** A picked folder that has no real path for this app: its documents through the picker's provider, depth first,
+     * each under its path inside the folder. A listing the provider is still loading, or reports an error for, stops
+     * the import: a part of a folder must never replace the earlier mods. */
+    private static void addDocumentTree(ContentResolver resolver, Uri tree, String id, String path, ModImport.Session session, int depth) throws IOException {
+        if (depth > ModImport.MAX_DEPTH + 8) throw new ModImport.Invalid("bad_path", path);
+        String[] columns = {android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID, android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE};
+        List<String[]> children = new ArrayList<>();
+        try (android.database.Cursor cursor = resolver.query(android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(tree, id), columns, null, null, null)) {
+            if (cursor == null) throw new IOException("the folder cannot be listed");
+            android.os.Bundle extras = cursor.getExtras();
+            if (extras != null && (extras.getBoolean(android.provider.DocumentsContract.EXTRA_LOADING) || extras.getString(android.provider.DocumentsContract.EXTRA_ERROR) != null))
+                throw new IOException("the folder's listing is incomplete");
+            while (cursor.moveToNext()) {
+                if (cursor.isNull(0) || cursor.isNull(1) || children.size() >= ModImport.MAX_FILES) throw new IOException("the folder cannot be listed completely");
+                children.add(new String[]{cursor.getString(0), cursor.getString(1), cursor.getString(2)});
+            }
+        } catch (RuntimeException unavailable) { throw new IOException("the folder cannot be listed: " + unavailable); }
+        for (String[] child : children) {
+            String at = path.isEmpty() ? child[1] : path + "/" + child[1];
+            if (android.provider.DocumentsContract.Document.MIME_TYPE_DIR.equals(child[2])) { addDocumentTree(resolver, tree, child[0], at, session, depth + 1); continue; }
+            try (InputStream in = resolver.openInputStream(android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, child[0]))) {
+                if (in == null) throw new IOException("unreadable: " + at);
+                session.add(at, in);
+            }
+        }
     }
 
     private void confirmDelete() {
@@ -2743,6 +2872,7 @@ public final class SetupActivity extends Activity implements SetupService.Listen
         if (request == UpdateInstaller.REQUEST_SOURCES) { if (updater != null) updater.permissionReturned(); return; }
         if (code != RESULT_OK || data == null) return;
         if (request == REQ_DRIVER) { if (data.getData() != null) installDriver(data.getData()); return; }
+        if (request == REQ_MODS_ZIP || request == REQ_MODS_TREE) { if (data.getData() != null) installMods(data.getData(), request == REQ_MODS_TREE); return; }
         if (request == REQ_EXPORT) { if (data.getData() != null) writeExport(data.getData()); return; }
         if (request == REQ_IMPORT_ZIP || request == REQ_IMPORT_TREE) { if (data.getData() != null) stageImport(data.getData(), request == REQ_IMPORT_TREE); return; }
         if (request == REQ_MIRROR) { if (data.getData() != null) useMirror(data.getData()); return; }

@@ -64,4 +64,4 @@ the settings each one writes: [developer-settings.md](developer-settings.md).
 - [benchmarks/](benchmarks/): the performance baseline and ledger.
 - [games/totk/android/APP.md](../games/totk/android/APP.md), [VULKAN.md](../games/totk/android/VULKAN.md),
   [DEBUGGING.md](../games/totk/android/DEBUGGING.md): the full developer notes.
-- [mods.md](mods.md): RomFS mods (the Mac app).
+- [mods.md](mods.md): RomFS mods, including a TKMM merge on Android.

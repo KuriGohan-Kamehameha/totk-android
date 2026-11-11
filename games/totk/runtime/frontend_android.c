@@ -1700,6 +1700,16 @@ static int start_game(const ANativeActivity *a) {
     env_default("TOTK_VK_PIPELINE_CACHE_IMPORT", "%s/vk-pipeline-cache.bin", g_data);   /* install_app.sh cache-import */
     env_default("TOTK_SHARED_FONTS", "%s/extracted/firmware/shared-fonts", g_data);
     snprintf(p, sizeof p, "%s/game-data/%s", g_data, version); env_default("TOTK_GAME_DATA", "%s", p);   /* runtime/game_data.h */
+    /* Player mods (runtime/romfs.c; docs/mods.md). TOTK_ROMFS_MODS from totk.env wins (0 = none). Otherwise the first
+       folder that exists: mods/<version> in the game folder, then in the app's own shared folder
+       (Android/data/<package>/files). The shared folder needs no permission and is the one a PC can fill (adb, MTP)
+       while the game data is in private storage. The choice is logged; what is in it, by the RomFS start. */
+    if (!getenv("TOTK_ROMFS_MODS")) {
+        snprintf(p, sizeof p, "%s/mods/%s", g_data, version);
+        if (!is_dir(p) && a->externalDataPath) snprintf(p, sizeof p, "%s/mods/%s", a->externalDataPath, version);
+        if (is_dir(p)) { setenv("TOTK_ROMFS_MODS", p, 1); fprintf(stderr, "[totk-app] mods folder %s\n", p); }
+        else fprintf(stderr, "[totk-app] mods folder: none (no mods/%s in the game folder%s)\n", version, a->externalDataPath ? " or the app's shared folder" : "");
+    }
     env_default("TOTK_OPERATION_MODE", "%s", "handheld");
     android_native_ui_mode_policy();
     env_default("TOTK_ROMFS_MMAP", "%s", "1");

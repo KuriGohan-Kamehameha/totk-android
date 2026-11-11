@@ -5,8 +5,9 @@
 <a id="english"></a>
 ## English
 
-The app loads **RomFS mods only**. `exefs/` files are not loaded (the runtime uses the rewritten
-`main`, `sdk` and `subsdk0`, and IPS or pchtxt files are not picked up automatically). Loose mod files are
+The app loads **RomFS mods**, and from a mod manager's merge also the **IPS patches of `main`**
+([below](#ips-patches-of-main-exefsbuild-idips)). Code modules in `exefs/` (`subsdk` files) are not loaded: the
+runtime runs the rewritten `main`, `sdk` and `subsdk0` only. Loose mod files are
 used only when one file lists them: `manifest.tsv`. The one exception is a mod manager's merged output, a
 folder with `romfs/` inside and no manifest, which is scanned: see
 [TKMM](#a-mod-managers-merged-output-tkmm) and [Android](#android) below.
@@ -89,8 +90,9 @@ copying, or the removed files stay active. Generate the manifest again after eve
   timing; `<n>` is 100, 110 or 140 depending on the version), `Event/EventFlow/DmF_SY_GameOver.bfevfl.zs`, and with the
   2K output `System/HeapSize/Product.Nin_NX_NVN.HeapDef.byml.zs`. A mod that replaces one of them stops the start with
   "two overlays replace the same file"; leave that file out of the mod for now (UI translation mods hit this, #73).
-- `exefs/` is not loaded; only RomFS content works. (`TOTK_PCHTXT` is a developer experiment for pchtxt
-  patches, not a general mod loader.)
+- Of `exefs/`, only IPS patches of `main` are used, and only from a mods folder with `exefs/` in or beside it (see
+  below); `subsdk` code modules are not loaded. (`TOTK_PCHTXT` is a developer experiment for pchtxt patches, not a
+  general mod loader.)
 - This guide covers the Mac app and, below, Android; installing mods into the iPhone/iPad app container is not covered.
 
 ### A mod manager's merged output (TKMM)
@@ -115,8 +117,8 @@ to generate and nothing to regenerate after the next merge:
 - A file this build replaces itself (the list under *Notes*) stops the start, as with a manifest: the log names the
   file and the two ways out (remove it from the mods folder, or turn off the option that needs the build's copy).
   The Android app replaces none of them at its default settings.
-- `exefs/` is **not loaded**: IPS patches and `subsdk` code modules (UltraCam, Self-Recall and other exlaunch mods)
-  have no effect, and the log lists them. The RomFS half of such a mod is still served.
+- Of `exefs/`, the IPS patches of `main` are applied (next section). `subsdk` code modules (UltraCam, Self-Recall and
+  other exlaunch mods) are **not loaded**, and the log lists them. The RomFS half of such a mod is still served.
 - Replace the folder's contents while the game is closed. A `manifest.tsv` in the folder, or inside its `romfs/`, takes
   precedence over the scan; one that cannot be read or parsed stops the start instead of falling back to it.
 
@@ -124,6 +126,29 @@ The log line to look for:
 
 ```text
 [totk] RomFS mods: .../romfs scanned (no manifest.tsv): 2412 files replace originals, 887 added, ...
+```
+
+### IPS patches of main (`exefs/<build id>.ips`)
+
+A merge's `exefs/` folder can hold IPS patches (IPS32 or the classic format), each named after the build id of the
+module it patches. The `exefs/` folder is looked for inside the mods folder, or beside it when `TOTK_ROMFS_MODS`
+names the merge's `romfs/` folder itself. A file named after `main`'s build id is applied at start, whole or not at
+all; a file for another module or game version is left alone, and the log says so. The start stops, naming the file,
+the address and the reason, when a record
+
+- lies outside `main`'s code, read-only data and data, overlaps another record, or overwrites a pointer the loader
+  relocated;
+- changes an instruction this port rewrote to run on the device (or one inside a rewritten sequence, which no longer
+  runs);
+- puts in an instruction the port would have had to rewrite: one that names register `x18`, a system call, or a
+  system-register instruction;
+- changes a word that one of this port's own patches replaces (that patch reports it).
+
+`TOTK_MOD_IPS=0` in `totk.env` leaves the files unread. pchtxt files are not read (TKMM writes IPS when it merges).
+The log line of a file that was applied:
+
+```text
+[totk] mod IPS: .../exefs/277178B7DBA1B6D4949A84778D4ABC58B31B34F5.ips applied, 3 records, 12 bytes in main
 ```
 
 ### Android
@@ -157,9 +182,10 @@ so the app can read them only when they are readable by others.
 <a id="chinese"></a>
 ## 中文
 
-Mac App 只加载 **RomFS mod**。`exefs/` 里的文件不会被加载（运行时用的是改写后的 `main`、`sdk` 和
-`subsdk0`，IPS 和 pchtxt 不会自动生效），App 也不会扫描文件夹找 mod。是否使用某个 mod，完全由
-`manifest.tsv` 决定。
+App 加载 **RomFS mod**，对 mod 管理器的合并输出还会应用 **`main` 的 IPS 补丁**
+（[见下文](#main-的-ips-补丁exefsbuild-idips)）。`exefs/` 里的代码模块（`subsdk` 文件）不会被加载：运行时只运行
+改写后的 `main`、`sdk` 和 `subsdk0`。散装的 mod 文件是否使用，完全由 `manifest.tsv` 决定；唯一的例外是 mod
+管理器的合并输出（目录里有 `romfs/` 而没有清单），它会被扫描，见下文的 TKMM 和 Android 两节。
 
 启动器把 `TOTK_ROMFS_MODS` 指向
 
@@ -234,8 +260,8 @@ Mac App 只加载 **RomFS mod**。`exefs/` 里的文件不会被加载（运行�
   按版本是 100、110 或 140）、`Event/EventFlow/DmF_SY_GameOver.bfevfl.zs`，开 2K 输出时还有
   `System/HeapSize/Product.Nin_NX_NVN.HeapDef.byml.zs`。模组如果也替换其中一个，启动时会报“two overlays replace the
   same file”并停止，目前只能把那个文件从模组里去掉（界面翻译模组会碰到，见 #73）。
-- `exefs/` 不会被加载，只有 RomFS 内容生效。（`TOTK_PCHTXT` 是开发者的 pchtxt 实验入口，不是
-  通用的 mod 加载器。）
+- `exefs/` 里只有 `main` 的 IPS 补丁会被使用，而且只来自带有 `exefs/` 的 mod 目录（见下文）；`subsdk` 代码模块
+  不会被加载。（`TOTK_PCHTXT` 是开发者的 pchtxt 实验入口，不是通用的 mod 加载器。）
 - 本文面向 Mac App，以及下文的 Android；iPhone/iPad 的 App 容器内安装未在此说明。
 
 ### mod 管理器的合并输出（TKMM）
@@ -259,8 +285,8 @@ mod 目录里**没有 `manifest.tsv`** 但有 `romfs/` 文件夹时，每次启�
 - 跳过 `desktop.ini`、`Thumbs.db` 和以点开头的文件；不跟随链接。
 - 构建本身也替换的文件（见上面的“注意”）会让启动停止，和使用清单时一样：日志会写出文件名和两种解决办法
   （把它从 mod 目录里删掉，或关闭需要构建版本的那个选项）。Android App 在默认设置下不替换其中任何一个。
-- `exefs/` **不会被加载**：IPS 补丁和 `subsdk` 代码模块（UltraCam、Self-Recall 等 exlaunch mod）不生效，日志会
-  列出它们；这类 mod 的 RomFS 部分仍然会被提供。
+- `exefs/` 里 `main` 的 IPS 补丁会被应用（见下一节）；`subsdk` 代码模块（UltraCam、Self-Recall 等 exlaunch mod）
+  **不会被加载**，日志会列出它们；这类 mod 的 RomFS 部分仍然会被提供。
 - 请在游戏关闭时替换目录内容。目录里（或它的 `romfs/` 里）有 `manifest.tsv` 时以清单为准，不做扫描；清单无法
   读取或解析时启动会停止，不会退回到扫描。
 
@@ -268,6 +294,25 @@ mod 目录里**没有 `manifest.tsv`** 但有 `romfs/` 文件夹时，每次启�
 
 ```text
 [totk] RomFS mods: .../romfs scanned (no manifest.tsv): 2412 files replace originals, 887 added, ...
+```
+
+### main 的 IPS 补丁（`exefs/<build id>.ips`）
+
+合并输出的 `exefs/` 目录里可以有 IPS 补丁（IPS32 或经典格式），文件名是它所修补模块的 build id。`exefs/` 在
+mod 目录里面查找；如果 `TOTK_ROMFS_MODS` 指向的就是合并输出的 `romfs/` 目录，则在它旁边查找。文件名与 `main`
+的 build id 相符的补丁会在启动时整体应用，要么全部生效要么全部不生效；属于其他模块或其他游戏版本的文件不会
+被使用，日志会说明。遇到下面的记录时启动会停止，并写出文件、地址和原因：
+
+- 落在 `main` 的代码、只读数据和数据之外，与另一条记录重叠，或覆盖了加载器重定位过的指针；
+- 修改了本移植为了在设备上运行而改写过的指令（或位于被改写的指令序列内部、已不再执行的指令）；
+- 写入了本移植本来必须改写的指令：使用 `x18` 寄存器的指令、系统调用，或系统寄存器指令；
+- 修改了本移植自己的补丁要替换的指令字（由那个补丁报告）。
+
+在 `totk.env` 里写 `TOTK_MOD_IPS=0` 可以不读取这些文件。pchtxt 文件不会被读取（TKMM 合并时会输出 IPS）。
+补丁被应用时的日志：
+
+```text
+[totk] mod IPS: .../exefs/277178B7DBA1B6D4949A84778D4ABC58B31B34F5.ips applied, 3 records, 12 bytes in main
 ```
 
 ### Android

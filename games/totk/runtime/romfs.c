@@ -6,6 +6,7 @@
 #include "fs_host.h"
 #include "romfs_path.h"
 #include "romfs_scan.h"
+#include "mod_ips.h"   /* mod_exefs_dir */
 #include "host_os.h"   /* SHA-256: CommonCrypto on Darwin */
 #include "totk_drs.h"
 #if !defined(__APPLE__)
@@ -276,15 +277,17 @@ static int scan_visit(void *user,const char *rel,const char *file,const struct s
  if(known)s->replaced++;else if(s->added++<8)fprintf(stderr,"[totk] RomFS mods: %s is added (the RomFS has no file of that path)\n",rel);
  s->bytes+=(uint64_t)st->st_size;return 0;
 }
-/* exefs/ beside romfs/: code mods (subsdk modules, IPS or pchtxt patches of main). The loader maps the three rewritten
-   modules only, so none of it is loaded; naming what is there explains a mod whose code half is missing. */
+/* exefs/ beside romfs/: code mods. IPS patches of main are applied by the game patches (mod_ips.h). Code modules
+   (subsdk files, exlaunch mods) are not loaded: the loader maps the three rewritten modules only, so naming what is
+   there explains a mod whose code half is missing. */
 static void mods_exefs_note(const char *mods) {
- char p[4200],names[256]="";if(snprintf(p,sizeof(p),"%s/exefs",mods)>=(int)sizeof(p))return;DIR *d=opendir(p);if(!d)return;
+ char p[4200],names[256]="";if(!mod_exefs_dir(mods,p,sizeof(p)))return;DIR *d=opendir(p);if(!d)return;
  unsigned count=0;size_t used=0;struct dirent *e;
- while((e=readdir(d))){if(romfs_scan_junk(e->d_name)||!strcmp(e->d_name,"main.npdm"))continue;
+ while((e=readdir(d))){size_t len=strlen(e->d_name);
+  if(romfs_scan_junk(e->d_name)||!strcmp(e->d_name,"main.npdm")||(len>4&&!strcasecmp(e->d_name+len-4,".ips")))continue;
   if(count++<6){int n=snprintf(names+used,sizeof(names)-used,"%s%.40s",used?", ":"",e->d_name);if(n>0&&(size_t)n<sizeof(names)-used)used+=(size_t)n;}}
  closedir(d);
- if(count)fprintf(stderr,"[totk] RomFS mods: %s holds %u code mod file%s (%s%s) that this port does not load: only RomFS files are used, so a mod that needs its code half may misbehave\n",p,count,count==1?"":"s",names,count>6?", ...":"");
+ if(count)fprintf(stderr,"[totk] RomFS mods: %s holds %u code mod file%s (%s%s) that this port does not load: RomFS files and IPS patches of main are used, so a mod that needs a code module may misbehave\n",p,count,count==1?"":"s",names,count>6?", ...":"");
 }
 /* 1 when dir holds a manifest.tsv, which is then loaded and decides everything: a manifest that is there but cannot be
    read or parsed stops the start and never falls back to scanning, and one without lines means no mod. */

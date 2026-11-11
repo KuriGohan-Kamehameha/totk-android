@@ -1,6 +1,7 @@
 #include "game_patches.h"
 #include "code_guard.h"
 #include "aspect_patch.h"
+#include "mod_ips.h"
 #include "game_version.h"
 #include "world_survey.h"
 #include "platform.h"
@@ -575,6 +576,7 @@ void runtime_game_patches(Module *m) {
         fprintf(stderr, "[totk] embedded main: real-time frame step and 60 FPS patch (%zu instructions) applied at build time\n", n);
         return;
     }
+    mod_ips_load(m);   /* a mod's IPS files for this main (mod_ips.h), then a developer's pchtxt */
     patch_pchtxt(m);   /* first: the runtime's own patches check the original words they replace */
     if (realtime_enabled()) patch_realtime(m);
     else fprintf(stderr,"[totk] real-time frame step off (TOTK_REALTIME=0)\n");

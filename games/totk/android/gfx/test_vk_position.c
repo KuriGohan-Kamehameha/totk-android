@@ -2,6 +2,7 @@
    driver validate real seed modules with spirv-val, without a Vulkan device. */
 #include <assert.h>
 #include "vk_position.h"
+#include "vk_varyings.h"
 #include "vk_seed_pack.h"
 #define OP(n, op) ((uint32_t)(n) << 16 | (op))
 
@@ -180,6 +181,26 @@ int main(int argc, char **argv) {
         uint32_t bad[] = {0x07230203, 0x00010300, 0, 8, 0, OP(9, 17)};
         assert(vk_spirv_nan_minmax(bad, sizeof bad / 4) == -1);
     }
-    puts("vertex position policy, decorations, slices, idempotence and failure atomicity passed; nan-minmax passed");
+    for (int block = 0; block < 2; block++) {   /* missing varyings: added as Outputs, in the interface, stored first in main */
+        module m = fixture(block);
+        uint32_t before, after; uint8_t kinds[32] = {0};
+        assert(!vk_spirv_io(m.words, m.count, 3, &before, NULL));
+        kinds[5] = VK_VARY_FLOAT; kinds[6] = VK_VARY_UINT; kinds[9] = VK_VARY_SINT;
+        uint32_t missing = (1u << 5 | 1u << 6 | 1u << 9) & ~before;
+        assert(missing);
+        size_t n = 0; uint32_t *o = vk_spirv_add_outputs(m.words, m.count, missing, kinds, &n);
+        assert(o && n > m.count && o[3] > m.words[3]);
+        uint8_t got[32]; assert(!vk_spirv_io(o, n, 3, &after, got));
+        assert(after == (before | missing));
+        for (int l = 0; l < 32; l++) if (missing >> l & 1) assert(got[l] == kinds[l]);
+        size_t ep = 0, stores = 0;
+        for (size_t i = 5; i < n; i += o[i] >> 16) { if ((o[i] & 0xffff) == 15) ep = o[i] >> 16; if ((o[i] & 0xffff) == 62) stores++; }
+        size_t ep0 = 0;
+        for (size_t i = 5; i < m.count; i += m.words[i] >> 16) if ((m.words[i] & 0xffff) == 15) ep0 = m.words[i] >> 16;
+        assert(ep == ep0 + (size_t)__builtin_popcount(missing) && stores >= (size_t)__builtin_popcount(missing));
+        assert(!vk_spirv_add_outputs(m.words, m.count, 0, kinds, &n));   /* nothing missing: nothing to do */
+        free(o); free(m.words);
+    }
+    puts("vertex position policy, decorations, slices, idempotence and failure atomicity passed; nan-minmax and varyings passed");
     return 0;
 }

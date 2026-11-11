@@ -593,6 +593,11 @@ typedef struct vk_shader {
     uint8_t framegen_plane; /* audited VS view-position or FS plane-depth convention, not unconditional admission */
     uint8_t framegen_uncertified_plane; /* exact experimental VS candidate; no authority unless opt-in and runtime checks */
     uint64_t xlate_miss_ns; /* recorder clears after its first emitted draw/dispatch; not a GPU-completion timestamp */
+    /* user varyings (vk_varyings.h): a vertex shader's Output Locations, a fragment shader's Input Locations and their
+       numeric kinds; io_known when the module could be read. vfix: vertex modules with the varyings a fragment shader
+       reads that this vertex shader does not write added as (0, 0, 0, 1) (vk_vs_module_for). */
+    uint32_t vout_mask, fin_mask; uint8_t fin_kind[32]; uint8_t io_known;
+    struct vk_vfix *vfix;
 } vk_shader;
 
 /* ---------- opt-in per-slot GPU pass profiler (vk_gpuprof.c) ---------- */
@@ -649,6 +654,7 @@ typedef struct vk_prog vk_prog;
 int vk_prog_resolve(const prog_t *p, vk_shader *out[6]);
 void vk_stage_sig_invalidate(unsigned stages);   /* recording-thread state writes: one bit per NVN stage */
 void vk_prog_prepare(const prog_t *p); /* bind-time compute compilation, no variant selection or graphics seed IO */
+VkShaderModule vk_vs_module_for(vk_shader *vs, const vk_shader *fs);   /* vs->mod, or one with fs's missing varyings added */
 VkPipelineLayout vk_layout_of(vk_shader *vs, vk_shader *fs);
 VkPipeline vk_compute_pipeline(vk_shader *cs, VkPipelineLayout *layout);
 void vk_compute_start(void);

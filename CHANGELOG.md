@@ -5,6 +5,17 @@ the game version it runs is shown separately. versionCode = major × 10000 + min
 
 ## Unreleased
 
+### Mods
+- *Game data → Mods* imports a TKMM merge or a mod's folder or zip (anything with `romfs` inside) into the app's
+  private storage, and removes it again. Details: [docs/mods.md](docs/mods.md).
+- A mods folder that has `romfs/` and no `manifest.tsv` is scanned at start, so a merge needs no manifest. The game
+  looks in `mods/v143` of the game folder, then of the app's private files, then of its shared folder.
+- IPS patches of `main` in a merge's `exefs/` are checked and applied; `subsdk` code modules are still not loaded and
+  are listed in the log.
+- Checked on an AYN Thor with a headless build of the runtime (scan, IPS and refusals against a real 1.4.3 install)
+  and with the 1.0.1 release app reading a TKMM 2.1.6 merge through a manifest. Host tests cover the import core
+  (`ModImport.java`); the menu rows and the picker flow have not been run on a device.
+
 ### Developer tools
 - Add launch-only, default-off `TOTK_BENCH_TIME=HH:MM` for restored-save benchmark arms.
   It pins the native effective clock, overriding timeline/sleep/day progression; weather and randomness remain uncontrolled.

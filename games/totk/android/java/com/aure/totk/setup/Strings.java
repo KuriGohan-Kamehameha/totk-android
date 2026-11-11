@@ -305,6 +305,47 @@ final class Strings {
     static final String DRIVER_RESET_ROW = "Use the bundled driver";
     static final String DRIVER_RESET_HINT = "Removes the custom driver file";
     static final String DRIVER_BUNDLED = "Bundled";
+    static final String MODS_ROW = "Mods";
+    static final String MODS_HINT = "A TKMM merge, or a mod's folder with romfs inside";
+    static final String MODS_NONE = "None";
+    static final String MODS_FROM = "Import mods from";
+    static final String MODS_BODY = "Pick the folder or zip that has a romfs folder inside: TKMM's Merged folder, or one mod as it was "
+            + "downloaded. It replaces the mods imported before. To use several mods together, merge them with TKMM first.";
+    static final String MODS_TREE = "A folder";
+    static final String MODS_TREE_HINT = "The folder that holds romfs, for example TKMM's Merged";
+    static final String MODS_ZIP = "A zip file";
+    static final String MODS_ZIP_HINT = "A zip with a romfs folder inside";
+    static final String MODS_REMOVE = "Remove the imported mods";
+    static final String MODS_REMOVE_HINT = "A mods folder placed by hand is not touched";
+    static final String MODS_IMPORTING = "Importing mods…";
+    static final String MODS_REMOVED = "Imported mods removed";
+    static final String MODS_REMOVING = "Removing mods…";
+    static final String MODS_NOT_REMOVED = "Some mod files could not be removed";
+    static final String MODS_BY_HAND = "Game folder";
+    static final String MODS_BY_HAND_NOTE = "has its own mods folder, which is used instead";
+    static final String MODS_FILES = "Game files";
+    static final String MODS_PATCHES = "Code patches";
+    static final String MODS_PATCHES_NOTE = "checked and applied at start";
+    static final String MODS_MODULES = "Code modules";
+    static final String MODS_MODULES_NOTE = "not loaded by this port";
+    static final String MODS_SOURCE = "Imported from";
+    /** The mods row and the note after an import: files, size and how many code modules the port will not load. */
+    static String modsState(int files, long size, int modules) {
+        return files + " files · " + bytes(size) + (modules == 0 ? "" : " · " + modules + " code module" + (modules == 1 ? "" : "s") + " not loaded");
+    }
+    /** ModImport.Invalid codes in the player's words; anything else with its own text. */
+    static String modsError(String code, String detail) {
+        switch (code) {
+            case "no_romfs": return "No romfs folder was found in it: pick the folder, or a zip of the folder, that holds romfs.";
+            case "several": return "It holds more than one mod (several romfs folders). Merge them with TKMM and import the merge.";
+            case "only_modules": return "It holds only code modules, which this port does not load.";
+            case "bad_zip": return "That file is not a zip archive that can be read.";
+            case "bad_path": case "duplicate": return "That archive cannot be used: " + detail;
+            case "too_many": case "too_big": return "That is more than the import takes: " + detail;
+            case "no_space": return "Not enough free storage for these mods.";
+            default: return "The mods were not imported: " + detail;
+        }
+    }
     static final String DRIVER_BAD = "That file is not a Vulkan driver: pick a Turnip .zip (AdrenoTools) or its .so (64-bit ARM).";
     static final String DRIVER_ZIP_BAD = "That zip has no usable driver. Its meta.json must name an existing libraryName, or it must "
             + "contain exactly one .so (64-bit ARM, up to 128 MiB; at most 256 entries).";
@@ -327,6 +368,11 @@ final class Strings {
             + "it nothing is drawn. Building takes a few minutes.";
     static final String DRIVER_TEXT = "The Vulkan driver the game uses. The bundled Mesa Turnip build is tested with this app. Pick a "
             + "Turnip .zip (AdrenoTools format) or a 64-bit ARM .so; only the driver library is copied into the game folder and used instead.";
+    static final String MODS_TEXT = "Game files that replace or add to your game data. They are copied into the app's private storage "
+            + "and used from the next start. IPS patches of the game's main program are checked and applied; code modules (subsdk "
+            + "files, as UltraCam and other exlaunch mods ship them) are not loaded, so a mod that needs one may misbehave. If the game "
+            + "stops at start after an import, totk.log names the file; remove the imported mods here. A mods folder placed by hand "
+            + "in the game folder is used instead of the import.";
     static final String RERUN_TEXT = "Opens setup again to pick different files. Steps that are already finished and still match "
             + "are kept.";
     static final String DELETE_TEXT = "Removes the imported game data from this device. Saves, menu settings and a custom driver stay. "

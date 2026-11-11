@@ -153,14 +153,22 @@ The log line of a file that was applied:
 
 ### Android
 
-With no setting to change, the game uses the first of these folders that exists:
+**In the app:** *Game data → Mods* imports a folder or a zip that has `romfs` inside (TKMM's *Merged* folder, or one
+mod as it was downloaded; `romfs` may sit below other folders). The files are copied into the app's private storage,
+next to the saves, so they stay when the game data is moved or deleted; a new import replaces the earlier one only
+after it was copied completely, and *Remove the imported mods* deletes it (a mods folder you placed by hand, below, is
+not touched and takes precedence when it is in the game folder). Everything outside `romfs/` and
+`exefs/` is left out, as are desktop leftovers and a `manifest.tsv`. The row then shows the number of files, their size
+and how many code modules will not be loaded.
+
+**By hand:** with no setting to change, the game uses the first of these folders that exists:
 
 1. `mods/v143` in the game data folder (the folder that holds `install.json` and `totk.log`);
-2. `mods/v143` in the app's shared folder on internal storage, `Android/data/com.aure.totk/files`.
+2. `mods/v143` in the app's private files (where the import above puts them);
+3. `mods/v143` in the app's shared folder on internal storage, `Android/data/com.aure.totk/files`.
 
-The second one is there for the default install: game data in the app's private internal storage cannot be reached
-from a PC or a file manager, but the shared folder can (over USB, or `adb push`), and the app reads it without any
-permission. Uninstalling the app removes it. `TOTK_ROMFS_MODS=<folder>` in `totk.env` names another folder and
+The third one is for a PC: game data in the app's private internal storage cannot be reached from outside, but the
+shared folder can (`adb`), and the app reads it without any permission. Uninstalling the app removes it. `TOTK_ROMFS_MODS=<folder>` in `totk.env` names another folder and
 `TOTK_ROMFS_MODS=0` turns mods off. `totk.log` says which folder was chosen (`[totk-app] mods folder ...`).
 
 Both forms work in that folder: a TKMM merge (`mods/v143/romfs`, `mods/v143/exefs`) or loose files with a
@@ -317,13 +325,21 @@ mod 目录里面查找；如果 `TOTK_ROMFS_MODS` 指向的就是合并输出的
 
 ### Android
 
-无需任何设置，游戏使用下面第一个存在的目录：
+**在 App 里：** *Game data → Mods* 可以导入一个里面有 `romfs` 的文件夹或 zip（TKMM 的 *Merged* 文件夹，或下载下来的
+单个 mod；`romfs` 可以在更深一层的文件夹里）。文件会被复制到 App 的私有存储，和存档放在一起，所以移动或删除游戏
+数据时它们不受影响；新的导入只有在完整复制之后才会替换之前的 mod，*Remove the imported mods* 会删除它（下面所说
+手动放置的 mod 目录不受影响；放在游戏数据目录里的优先于导入的 mod）。
+`romfs/` 和 `exefs/` 之外的内容不会被导入，桌面遗留文件和 `manifest.tsv` 也不会。之后这一行会显示文件数量、大小，
+以及有多少个代码模块不会被加载。
+
+**手动放置：** 无需任何设置，游戏使用下面第一个存在的目录：
 
 1. 游戏数据目录（包含 `install.json` 和 `totk.log` 的那个目录）里的 `mods/v143`；
-2. App 在内部存储上的共享目录 `Android/data/com.aure.totk/files` 里的 `mods/v143`。
+2. App 私有文件里的 `mods/v143`（上面的导入就放在这里）；
+3. App 在内部存储上的共享目录 `Android/data/com.aure.totk/files` 里的 `mods/v143`。
 
-第二个是为默认安装准备的：放在 App 私有内部存储里的游戏数据无法从电脑或文件管理器访问，但共享目录可以（USB
-或 `adb push`），App 读取它也不需要任何权限。卸载 App 会删除它。在 `totk.env` 里写 `TOTK_ROMFS_MODS=<目录>`
+第三个是给电脑用的：放在 App 私有内部存储里的游戏数据无法从外部访问，但共享目录可以（`adb`），App 读取它也
+不需要任何权限。卸载 App 会删除它。在 `totk.env` 里写 `TOTK_ROMFS_MODS=<目录>`
 可以指定别的目录，`TOTK_ROMFS_MODS=0` 关闭 mod。`totk.log` 会写出选用的目录（`[totk-app] mods folder ...`）。
 
 这个目录里两种形式都可以：TKMM 合并输出（`mods/v143/romfs`、`mods/v143/exefs`），或带 `manifest.tsv` 的散装

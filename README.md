@@ -395,6 +395,9 @@ Updating keeps your saves and game data; **do not uninstall** to update.
 
 ## Saves and storage
 
+- **Mods**: *Game data → Mods* imports a [TKMM](https://github.com/TKMM-Team/Tkmm) merge or a mod's folder or zip into
+  the app's private storage. RomFS files and IPS patches of `main` are used; code modules (`subsdk`) are not loaded.
+  See [docs/mods.md](docs/mods.md).
 - **Saves** always stay in the app's private storage, wherever the game data is. *Saves* exports them to a zip and
   imports from a zip or a folder (this app's exports, JKSV, Checkpoint, Ryujinx or yuzu dumps), making a backup before
   every change (the newest 10 are kept). An optional **save folder** (for example on the SD card or a cloud-synced

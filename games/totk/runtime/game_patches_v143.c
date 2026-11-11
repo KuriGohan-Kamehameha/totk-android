@@ -1041,6 +1041,33 @@ void runtime_diag_xpoke(unsigned off,float value){
     fprintf(stderr,"[totk] xpoke X+%#x: %g -> %g\n",off,old,value);
 }
 #endif
+/* Black menu background (ability wheel, weapon / material selectors): the menu's scene-capture panes (Draw main+0x105bba8,
+   update 0x105ba70) capture and blur the frame only when their update has armed them (+0xd5, set when +0xd4 requests a
+   capture and the pane is visible). The update and the draw of a frame run on different job threads; the console's
+   long world draw lets the update arm the panes first, here the draw often reaches them first: the capture slips one
+   frame, into the first menu frame, whose scene the game has already cleared (black + HUD). The veneer also takes the
+   request (+0xd4) as armed, so the capture happens in the last world frame; the draw then clears the request as before
+   (0x105c36c), so the late update does not capture again. TOTK_MENU_CAPTURE_FIX=0 off. */
+static void patch_menu_capture(Module *m){
+    const char *e=getenv("TOTK_MENU_CAPTURE_FIX");if(e&&!strcmp(e,"0")){fprintf(stderr,"[totk] 1.4.3 menu capture fix off (TOTK_MENU_CAPTURE_FIX=0)\n");return;}
+#if TARGET_OS_IPHONE
+    (void)m;return;
+#else
+    uint64_t stub=((m->text_end+15)&~15ULL)+960;   /* after the FPS60 hardening veneer (+416, 125 words) */
+    const Patch guards[]={{0x105bbcc,0},{0x105bbd0,0}};   /* ldrb w8, [x0, #0xd5]; cbnz w8 (armed) */
+    uint32_t orig[2];
+    if(stub+16>((m->text_end+0xfff)&~0xfffULL)){fprintf(stderr,"[totk] 1.4.3 menu capture fix skipped: veneer layout\n");return;}
+    if(!code_guard(m,SITES(guards),orig,"a5e2a3003d86bfbb936dc67e51990369aea8bf463786eea310b99463fc3a901d")){fprintf(stderr,"[totk] 1.4.3 menu capture fix skipped: original instruction mismatch\n");return;}
+    for(unsigned i=0;i<16;i++)if(m->base[stub+i]){fprintf(stderr,"[totk] 1.4.3 menu capture fix skipped: veneer space in use\n");return;}
+    const uint32_t veneer[]={orig[0],     /* ldrb w8, [x0, #0xd5]: armed */
+        0x39435009,                       /* ldrb w9, [x0, #0xd4]: requested (x9 is scratch until 0x105bc0c) */
+        0x2a090108,                       /* orr w8, w8, w9 */
+        branch(stub+12,0x105bbd0)};       /* back to the cbnz */
+    memcpy(m->base+stub,veneer,sizeof veneer);
+    uint32_t word=branch(0x105bbcc,stub);memcpy(m->base+0x105bbcc,&word,4);
+    fprintf(stderr,"[totk] 1.4.3 menu capture fix: capture panes also capture when requested, veneer +%#llx\n",(unsigned long long)stub);
+#endif
+}
 static void patch_output_res(Module *m);
 static void patch_render_res(Module *m);
 void runtime_game_patches(Module *m) {
@@ -1058,6 +1085,7 @@ void runtime_game_patches(Module *m) {
     patch_fxaa(m);
     patch_drs60(m);
     patch_drs_framegen(m);
+    patch_menu_capture(m);
 #if TARGET_OS_OSX   /* Mac diagnostics (Mach thread debug state) */
     diag_main=m;   /* frmwatch / xpoke */
 #endif

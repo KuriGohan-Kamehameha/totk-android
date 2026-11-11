@@ -1098,8 +1098,10 @@ adb shell run-as com.aure.totk mkdir -p files/lsfg
 adb shell -T "run-as com.aure.totk sh -c 'cat > files/lsfg/Lossless.dll'" < /host/path/to/your/Lossless.dll
 ```
 
-Then start the app normally. A non-debuggable APK requires an authorized way
-to provision its private files; this prototype adds no file-picker/import UI.
+Then start the app normally. In the app, *Game data → Lossless Scaling DLL* copies a
+file the player picks to that same path (`LsfgImport.java`: a size bound and a Windows
+DLL header check, replaced only after a complete copy), and *Graphics → Performance →
+Frame generation → Lossless Scaling* writes the two lines above into `settings.env`.
 The source DLL is read only. Translation is in memory, with **no derived
 disk cache** and no DLL/shader asset in the APK or repository.
 

@@ -16,6 +16,13 @@ the game version it runs is shown separately. versionCode = major × 10000 + min
   and with the 1.0.1 release app reading a TKMM 2.1.6 merge through a manifest. Host tests cover the import core
   (`ModImport.java`); the menu rows and the picker flow have not been run on a device.
 
+### Frame generation
+- Add *Lossless Scaling* to *Graphics → Performance → Frame generation* and *Game data → Lossless Scaling DLL* to
+  import your own `Lossless.dll`. The engine, its timing and its limits are the existing experimental LSFG path
+  (`TOTK_FRAMEGEN_ENGINE=lsfg`); the app still ships no DLL and nothing derived from one. Without an imported file
+  the choice falls back to the built-in interpolation. Host tests cover the import and the settings; the menu rows
+  and the engine with an imported file have not been run on a device from this change.
+
 ### Developer tools
 - Add launch-only, default-off `TOTK_BENCH_TIME=HH:MM` for restored-save benchmark arms.
   It pins the native effective clock, overriding timeline/sleep/day progression; weather and randomness remain uncontrolled.

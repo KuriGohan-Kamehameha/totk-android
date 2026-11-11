@@ -92,7 +92,7 @@ Everything not in the menu is a developer switch. A selection:
 | `TOTK_VK_SHOT=300` | Saves every 300th frame as a screenshot. |
 | `TOTK_VK_XLATE_STATS=1` | Shader-translation statistics in `totk.log` ([translation-research.md](translation-research.md)). |
 | `TOTK_FRAMEGEN=locked` / `hybrid` / `adaptive` / `interp` | Frame-generation modes; *locked* is the menu's *Interpolation*. The others are opt-in qualification modes with their own required timing settings ([frame-interpolation.md](frame-interpolation.md), APP.md *Device profiles*). |
-| `TOTK_FRAMEGEN_ENGINE=lsfg` (+ `TOTK_LSFG_PERF`, `TOTK_LSFG_FLOW`) | Experimental LSFG frame generation with your own, privately owned DLL; only with the locked timing block. |
+| `TOTK_FRAMEGEN_ENGINE=lsfg` (+ `TOTK_LSFG_PERF`, `TOTK_LSFG_FLOW`) | Experimental LSFG frame generation with your own, privately owned DLL; only with the locked timing block. The menu writes it for *Frame generation → Lossless Scaling*; the DLL is imported under *Game data → Lossless Scaling DLL*. |
 | `TOTK_PSO_PREWARM=0` | Turns off the startup pipeline prewarm from the packaged key list. |
 | `TU_DEBUG=…` | Turnip debug flags (e.g. `noslabcs`); on Adreno 722 an absent `TU_DEBUG` defaults to `sysmem`. |
 

@@ -55,7 +55,7 @@ final class Diagram extends View {
         }
         switch (key) {
             case "frame_rate": frames(c, w, h, value("frame_rate").equals("unlimited") ? 8 : value("frame_rate").equals("60") ? 6 : 3, false); break;
-            case "frame_gen": frames(c, w, h, 3, value("frame_gen").equals("on")); break;
+            case "frame_gen": frames(c, w, h, 3, Settings.generates(value("frame_gen"))); break;
             case "render_res": resolution(c, w, h); break;
             case "latency": queue(c, w, h); break;
             case "upscaler": split(c, w, h, true); break;

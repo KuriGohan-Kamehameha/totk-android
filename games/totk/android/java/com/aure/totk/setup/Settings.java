@@ -34,7 +34,7 @@ final class Settings {
     /** Every option in menu order; the fallback is the shipping default (an absent settings.env behaves the same). */
     static final Option[] OPTIONS = {
         new Option("frame_rate", PERFORMANCE, "30", "30", "40", "60", "unlimited"),
-        new Option("frame_gen", PERFORMANCE, "off", "off", "on"),
+        new Option("frame_gen", PERFORMANCE, "off", "off", "on", "lsfg"),   // lsfg: the same timing with the Lossless Scaling engine
         new Option("render_res", PERFORMANCE, "game", "game", "1280x720", "1152x648", "960x540"),
         new Option("latency", PERFORMANCE, "balanced", "responsive", "balanced", "smoothest"),
         new Option("gpu_feed", PERFORMANCE, "off", "off", "on"),
@@ -85,7 +85,7 @@ final class Settings {
             values.put(option.key, value instanceof String && option.valid((String) value) ? (String) value : option.fallback);
         }
         // A hand-edited store must not hold a combination the menu cannot produce.
-        if ("on".equals(get("frame_gen"))) values.put("frame_rate", "30");
+        if (frameGen()) values.put("frame_rate", "30");
         // 1.0.0/1.0.1 had no gpu_feed key. Only a missing key adopts the chip default; explicit choices win.
         if (stored == null || !stored.containsKey("gpu_feed")) values.put("gpu_feed", gpuFeedDefault(soc));
     }
@@ -101,6 +101,10 @@ final class Settings {
         throw new IllegalArgumentException(key);
     }
     Map<String, String> values() { return values; }
+    /** Is this frame_gen value one that generates frames: the built-in interpolation ("on") or the Lossless Scaling
+     * engine with the player's own DLL ("lsfg")? Both use the locked timing block and need 30 fps. */
+    static boolean generates(String frameGen) { return "on".equals(frameGen) || "lsfg".equals(frameGen); }
+    boolean frameGen() { return generates(get("frame_gen")); }
     String get(String key) { return values.get(option(key).key); }
     int number(String key) { return Integer.parseInt(get(key)); }
 
@@ -111,7 +115,7 @@ final class Settings {
         if (!option.valid(value)) return;
         values.put(key, value);
         if (key.equals("frame_rate") && !value.equals("30")) values.put("frame_gen", "off");
-        if (key.equals("frame_gen") && value.equals("on")) values.put("frame_rate", "30");
+        if (key.equals("frame_gen") && generates(value)) values.put("frame_rate", "30");
     }
     /** The neighbouring value of a choice (wrapping), or the slider moved by step and clamped. */
     void step(String key, int direction) {
@@ -121,7 +125,7 @@ final class Settings {
         set(key, option.values[((i + direction) % n + n) % n]);
     }
     /** Frame generation fixes latency; uncapped producers must not queue acquire slack. */
-    boolean latencyLocked() { return "on".equals(get("frame_gen")) || "40".equals(get("frame_rate")) || "unlimited".equals(get("frame_rate")); }
+    boolean latencyLocked() { return frameGen() || "40".equals(get("frame_rate")) || "unlimited".equals(get("frame_rate")); }
     /** Which sharpness slider the current upscaler uses, or null when there is no upscaler. */
     String sharpnessKey() {
         switch (get("upscaler")) {
@@ -198,7 +202,7 @@ final class Settings {
             for (int k = 0; k < PRESET_KEYS.length; k++)
                 if (PRESET_VALUES[p][k] != null && option(PRESET_KEYS[k]).tab.equals(tab)) values.put(PRESET_KEYS[k], PRESET_VALUES[p][k]);
         }
-        if ("on".equals(get("frame_gen"))) values.put("frame_rate", "30");
+        if (frameGen()) values.put("frame_rate", "30");
         if (tab.equals(PERFORMANCE)) values.put("gpu_feed", gpuFeedDefault(soc));
     }
 
@@ -211,11 +215,14 @@ final class Settings {
         StringBuilder out = new StringBuilder(HEADER);
         if (dataDir != null && dataDir.startsWith("/") && dataDir.indexOf('\n') < 0 && dataDir.indexOf('\r') < 0 && dataDir.indexOf('\0') < 0)
             line(out, "TOTK_DATA_DIR=" + dataDir);
-        boolean framegen = "on".equals(get("frame_gen"));
+        boolean framegen = frameGen();
         boolean forty = "40".equals(get("frame_rate"));
         boolean unlimited = "unlimited".equals(get("frame_rate"));
-        if (framegen) for (String line : FRAMEGEN_BLOCK) line(out, line);
-        else {
+        if (framegen) {
+            for (String line : FRAMEGEN_BLOCK) line(out, line);
+            // The player's own Lossless.dll (Game data); without it the runtime logs why and interpolates as "on" does.
+            if ("lsfg".equals(get("frame_gen"))) line(out, "TOTK_FRAMEGEN_ENGINE=lsfg");
+        } else {
             boolean sixty = "60".equals(get("frame_rate"));
             line(out, "TOTK_FPS60=" + (sixty || forty || unlimited ? "1" : "0"));
             if (forty) {

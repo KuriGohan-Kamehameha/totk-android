@@ -190,7 +190,12 @@ Options: 30 fps, 40 fps, 60 fps · Default: **60 fps** on Odin 3, **30 fps** on 
 Draws an in-between picture from two real frames, so the screen updates 60 times a second while the game itself runs
 at 30. Motion looks smoother; input feels about one frame later (about 33 ms). Needs 30 fps, and sets the latency.
 
-Options: Off, Interpolation · Default: **Off** everywhere.
+Options: Off, Interpolation, Lossless Scaling · Default: **Off** everywhere.
+
+*Lossless Scaling* makes the in-between picture with the LSFG 3.1 engine from **your own** `Lossless.dll` (from your
+purchased copy of Lossless Scaling; the app does not include it). Import the file once under *Game data → Lossless
+Scaling DLL*; it is copied into the app's private storage and only read. Until a file is imported, this choice behaves
+like *Interpolation*, and `totk.log` says why.
 
 <img src="docs/images/set-frame-gen.webp" width="640" alt="Frame generation">
 

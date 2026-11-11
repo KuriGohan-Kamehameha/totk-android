@@ -14,7 +14,7 @@ TOTK = ROOT / 'games/totk'
 SOURCE = TOTK / 'android/java/com/aure/totk/setup/Settings.java'
 PROBE = TOTK / 'tests/settings/SettingsProbe.java'
 # Every key the native side accepts from settings.env (runtime/frontend_android.c allowlist, contract table).
-ALLOWED = {'TOTK_FPS60', 'TOTK_GPU_TIME', 'TOTK_FRAMEGEN', 'TOTK_REALTIME', 'TOTK_FRAME_LAG', 'TOTK_FPS_AUTO', 'DM_PRESENT_HZ',
+ALLOWED = {'TOTK_FPS60', 'TOTK_GPU_TIME', 'TOTK_FRAMEGEN', 'TOTK_FRAMEGEN_ENGINE', 'TOTK_REALTIME', 'TOTK_FRAME_LAG', 'TOTK_FPS_AUTO', 'DM_PRESENT_HZ',
            'DM_PRESENT_INTERVAL', 'TOTK_PRESENT_SLOTS', 'TOTK_VK_PRESENT', 'TOTK_ACQUIRE_SLACK', 'TOTK_ACQUIRE_CLOCK',
            'TOTK_PACE', 'TOTK_ASYNC_REPLAY', 'TOTK_RENDER_RES', 'TOTK_POST_SCALE', 'TOTK_POST_SHARPNESS',
            'TOTK_POST_SGSR_SHARPNESS', 'TOTK_FXAA', 'TOTK_POST_AA', 'TOTK_SHADOW_RES', 'TOTK_OPERATION_MODE',
@@ -371,6 +371,24 @@ class SettingsTests(unittest.TestCase):
         self.assertIn('TOTK_POST_SHARPNESS=1.0', self.env(upscaler='fsr', sharpness_fsr='100'))
         self.assertIn('TOTK_POST_SHARPNESS=0.0', self.env(upscaler='fsr', sharpness_fsr='0'))
         self.assertFalse(any('SHARPNESS' in l for l in self.env(upscaler='off', sharpness_fsr='90')))
+
+    def test_lossless_scaling_is_frame_generation_with_the_lsfg_engine(self):
+        on, lsfg = self.env(frame_gen='on', render_res='1152x648'), self.env(frame_gen='lsfg', render_res='1152x648')
+        self.assertEqual(lsfg[:len(FRAMEGEN) + 1], FRAMEGEN + ['TOTK_FRAMEGEN_ENGINE=lsfg'])
+        self.assertEqual([l for l in lsfg if l != 'TOTK_FRAMEGEN_ENGINE=lsfg'], on)     # nothing else differs
+        self.assertNotIn('TOTK_FRAMEGEN_ENGINE=lsfg', on)
+        self.assertFalse([l for l in self.env() if l.startswith('TOTK_FRAMEGEN')])
+        # the same rules as the built-in interpolation: 30 fps only, latency fixed, no GPU feed hints
+        self.assertEqual(self.values(self.run_probe('stored frame_rate=60 frame_gen=lsfg')[0])['frame_rate'], '30')
+        sixty, generated = map(self.values, self.run_probe('set frame_gen=lsfg frame_rate=60', 'set frame_rate=60 frame_gen=lsfg'))
+        self.assertEqual((sixty['frame_rate'], sixty['frame_gen']), ('60', 'off'))
+        self.assertEqual((generated['frame_rate'], generated['frame_gen']), ('30', 'lsfg'))
+        self.assertEqual(self.run_probe('latency frame_gen=lsfg'), ['true'])
+        self.assertEqual(self.env(frame_gen='lsfg', gpu_feed='on'), self.env(frame_gen='lsfg', gpu_feed='off'))
+        # the choice steps off -> Interpolation -> Lossless Scaling -> off, and is its own (custom) preset
+        steps = [self.values(l)['frame_gen'] for l in self.run_probe('step frame_gen 1', 'step frame_gen 1 frame_gen=on', 'step frame_gen 1 frame_gen=lsfg')]
+        self.assertEqual(steps, ['on', 'lsfg', 'off'])
+        self.assertEqual(self.run_probe('preset frame_gen=lsfg render_res=1152x648'), ['custom'])
 
     def test_frame_generation_writes_the_locked_timing_block_and_no_latency(self):
         env = self.env(frame_gen='on', latency='smoothest', render_res='1152x648')

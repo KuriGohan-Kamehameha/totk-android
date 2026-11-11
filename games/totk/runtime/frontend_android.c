@@ -1253,7 +1253,7 @@ static int start_refused(void) { if (g_game_lock >= 0) { close(g_game_lock); g_g
    directly (the launcher rewrites the file without it), nothing else. Any other key is a stale or foreign writer and is
    ignored; a developer's options belong in <game>/totk.env, which is read after it and wins. */
 static const char *const settings_keys[] = {
-    "TOTK_FPS60", "TOTK_GPU_TIME", "TOTK_FRAMEGEN", "TOTK_RENDER_RES", "TOTK_ACQUIRE_SLACK", "TOTK_POST_SCALE", "TOTK_POST_SHARPNESS",
+    "TOTK_FPS60", "TOTK_GPU_TIME", "TOTK_FRAMEGEN", "TOTK_FRAMEGEN_ENGINE", "TOTK_RENDER_RES", "TOTK_ACQUIRE_SLACK", "TOTK_POST_SCALE", "TOTK_POST_SHARPNESS",
     "TOTK_POST_SGSR_SHARPNESS", "TOTK_FXAA", "TOTK_POST_AA", "TOTK_SHADOW_RES", "TOTK_OPERATION_MODE", "TOTK_NATIVE_UI",
     "TOTK_OVERLAY", "TOTK_OVERLAY_POS", "TOTK_COMPANION", "TOTK_FACE_BUTTONS", "TOTK_AUDIO_PREFILL_MS", "TOTK_LOCALE",
     "TOTK_LANG", "TOTK_RUMBLE", "TOTK_RUMBLE_GAIN", "TOTK_GYRO", "TOTK_AUTOLOAD",

@@ -83,7 +83,7 @@ public final class SetupActivity extends Activity implements SetupService.Listen
     static final String EXTRA_UPDATE_AUTH = "com.aure.totk.setup.UPDATE_AUTH";
     private static final String[] ALL_ROLES = {"romfs", "exefs", "base", "update", "keys"};
     private static final int REQ_PICK = 100, REQ_DRIVER = 900, REQ_NOTIFY = 901, REQ_EXPORT = 902, REQ_IMPORT_ZIP = 903, REQ_IMPORT_TREE = 904, REQ_MIRROR = 905,
-            REQ_DATA_FOLDER = 906, REQ_ACCESS = 907, REQ_MODS_ZIP = 909, REQ_MODS_TREE = 910;
+            REQ_DATA_FOLDER = 906, REQ_ACCESS = 907, REQ_LSFG = 908, REQ_MODS_ZIP = 909, REQ_MODS_TREE = 910;
     private static final String[] TABS = {Settings.PERFORMANCE, Settings.PICTURE, Settings.SCREEN};
 
     private enum Screen { WELCOME, SETUP_STORAGE, ROUTE, FILES, UPDATES, UPDATE_DOWNLOAD, INSTALL, ERROR, INTERRUPTED, HOME, GRAPHICS, CONTROLS, DATA, STORAGE, ABOUT, LICENSES,
@@ -1386,7 +1386,7 @@ public final class SetupActivity extends Activity implements SetupService.Listen
     private static int cost(String key, String value) {
         switch (key) {
             case "frame_rate": return value.equals("unlimited") ? 5 : value.equals("60") ? 4 : value.equals("40") ? 3 : 2;
-            case "frame_gen": return value.equals("on") ? 3 : 0;
+            case "frame_gen": return Settings.generates(value) ? 3 : 0;
             case "gpu_feed": return value.equals("on") ? 1 : 0;
             case "render_res": return value.equals("960x540") ? 1 : value.equals("1152x648") ? 2 : 3;
             case "upscaler": return value.equals("off") ? 0 : 1;
@@ -1434,10 +1434,11 @@ public final class SetupActivity extends Activity implements SetupService.Listen
                 case "frame_gen":
                     fact(Strings.ADDED_LATENCY, Strings.addedLatency(key, value));
                     fact(Strings.WORKS_WITH, "30 fps only");
+                    if ("lsfg".equals(value) && !LsfgImport.target(getFilesDir()).isFile()) constraint = Strings.LSFG_NEEDS_DLL;
                     break;
                 case "gpu_feed":
                     fact(Strings.WORKS_WITH, "Frame generation off");
-                    if ("on".equals(settings.get("frame_gen"))) constraint = Strings.LOCKED_FRAMEGEN;
+                    if (settings.frameGen()) constraint = Strings.LOCKED_FRAMEGEN;
                     break;
                 case "latency":
                     fact(Strings.ADDED_LATENCY, settings.latencyLocked() ? Strings.latencyConstraint(settings) : Strings.addedLatency(key, value));
@@ -1564,6 +1565,14 @@ public final class SetupActivity extends Activity implements SetupService.Listen
                 mods == null ? Theme.TEXT3 : Theme.ZONAI, v -> chooseMods());
         modsRow.dimmed(modsBusy);
         gameControl(modsRow, "Changing the mods", this::chooseMods);
+        // The player's own Lossless.dll for the LSFG frame-generation engine: app-private, so it does not depend on the game folder.
+        File lsfg = LsfgImport.target(getFilesDir());
+        Widgets.Row lsfgRow = dataRow(list, "lsfg", Strings.LSFG_ROW, Strings.LSFG_HINT,
+                lsfg.isFile() ? Strings.LSFG_IMPORTED + Strings.bytes(lsfg.length()) : Strings.LSFG_NONE, lsfg.isFile() ? Theme.ZONAI : Theme.TEXT3, v -> pickLsfg());
+        Widgets.Row lsfgReset = dataRow(list, "lsfg-reset", Strings.LSFG_RESET_ROW, Strings.LSFG_RESET_HINT, "", Theme.TEXT3, v -> resetLsfg());
+        lsfgReset.dimmed(!lsfg.isFile());
+        gameControl(lsfgRow, "Changing the Lossless Scaling DLL", this::pickLsfg);
+        gameControl(lsfgReset, "Changing the Lossless Scaling DLL", this::resetLsfg);
         if (missing && StorageLocation.accessLost(this))
             dataRow(list, "access", Strings.ACCESS_FIX_ROW, Strings.ACCESS_FIX_HINT, Strings.ACCESS_OFF, Theme.WARN, v -> openAccessSettings());
         else if (missing) dataRow(list, "again", Strings.SETUP_AGAIN_ROW, Strings.SETUP_AGAIN_HINT, "", Theme.TEXT3, v -> go(Screen.STORAGE));
@@ -1622,6 +1631,7 @@ public final class SetupActivity extends Activity implements SetupService.Listen
                 if (!mods.source.isEmpty()) fact(Strings.MODS_SOURCE, mods.source);
                 break;
             }
+            case "lsfg": case "lsfg-reset": detailText.setText(Strings.LSFG_TEXT); break;
             case "rerun": detailText.setText(Strings.RERUN_TEXT); break;
             default: detailText.setText(Strings.DELETE_TEXT);
         }
@@ -1772,6 +1782,42 @@ public final class SetupActivity extends Activity implements SetupService.Listen
                 session.add(at, in);
             }
         }
+    }
+    private void pickLsfg() {
+        if (!needGameClosed("Changing the Lossless Scaling DLL", this::pickLsfg)) return;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
+        try { startActivityForResult(intent, REQ_LSFG); } catch (ActivityNotFoundException noPicker) { showNote(Strings.PICKER_MISSING); }
+    }
+
+    private void resetLsfg() {
+        if (!needGameClosed("Changing the Lossless Scaling DLL", this::resetLsfg)) return;
+        try (GameLock.Hold held = GameLock.hold(getFilesDir())) {
+            held.requireFree();
+            LsfgImport.target(getFilesDir()).delete();
+        } catch (IOException failed) { showNote(Strings.gameLockError(failed.toString())); return; }
+        render();
+    }
+
+    /** Copy the player's own Lossless.dll to <private files>/lsfg/Lossless.dll, where the LSFG engine reads it. */
+    private void installLsfg(Uri uri) {
+        if (!needGameClosed("Changing the Lossless Scaling DLL", () -> installLsfg(uri))) return;
+        ContentResolver resolver = getContentResolver();
+        worker.execute(() -> {
+            String outcome = null;
+            File direct = FileAccess.directFile(this, uri, -1);   // by its real path with All files access, else the picker's stream
+            try (GameLock.Hold held = GameLock.hold(getFilesDir())) {
+                held.requireFree();
+                InputStream in = direct != null ? new java.io.FileInputStream(direct) : resolver.openInputStream(uri);
+                if (in == null) throw new IOException("unreadable");
+                LsfgImport.install(in, LsfgImport.target(getFilesDir()));
+            } catch (LsfgImport.Invalid failed) {
+                outcome = Strings.LSFG_BAD;
+            } catch (IOException | SecurityException failed) {
+                outcome = Strings.gameLockError(failed.toString());
+            }
+            String message = outcome;
+            main.post(() -> { note = message == null ? "" : message; if (screen == Screen.DATA) render(); });
+        });
     }
 
     private void confirmDelete() {
@@ -2873,6 +2919,7 @@ public final class SetupActivity extends Activity implements SetupService.Listen
         if (code != RESULT_OK || data == null) return;
         if (request == REQ_DRIVER) { if (data.getData() != null) installDriver(data.getData()); return; }
         if (request == REQ_MODS_ZIP || request == REQ_MODS_TREE) { if (data.getData() != null) installMods(data.getData(), request == REQ_MODS_TREE); return; }
+        if (request == REQ_LSFG) { if (data.getData() != null) installLsfg(data.getData()); return; }
         if (request == REQ_EXPORT) { if (data.getData() != null) writeExport(data.getData()); return; }
         if (request == REQ_IMPORT_ZIP || request == REQ_IMPORT_TREE) { if (data.getData() != null) stageImport(data.getData(), request == REQ_IMPORT_TREE); return; }
         if (request == REQ_MIRROR) { if (data.getData() != null) useMirror(data.getData()); return; }

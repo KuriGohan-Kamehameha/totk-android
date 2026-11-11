@@ -182,7 +182,9 @@ final class Strings {
                     + "Unlimited lets the frame rate vary up to the game clock's 120 fps safety ceiling. It may run hotter and use more battery, "
                     + "and is best with a high-refresh screen. The app requests the display's highest supported refresh rate; Android may keep a lower mode.";
             case "frame_gen": return "Draws an in-between picture from two real frames, so the screen updates 60 times a second while "
-                    + "the game itself runs at 30. Motion looks smoother; input feels about one frame later.";
+                    + "the game itself runs at 30. Motion looks smoother; input feels about one frame later. Lossless Scaling makes "
+                    + "that picture with the LSFG engine from your own Lossless.dll (import it under Game data); the app does not "
+                    + "include it.";
             case "render_res": return "The size the game draws its 3D scene at before it is enlarged to fill the screen. Smaller is faster "
                     + "and softer. Game default lets the game choose, as on the console.";
             case "latency": return "How many finished pictures may wait for the screen. Responsive shows each one as soon as possible; "
@@ -223,7 +225,7 @@ final class Strings {
     static String valueName(String key, String value) {
         switch (key) {
             case "frame_rate": return value.equals("unlimited") ? "Unlimited" : value + " fps";
-            case "frame_gen": return value.equals("on") ? "Interpolation" : "Off";
+            case "frame_gen": return value.equals("lsfg") ? "Lossless Scaling" : value.equals("on") ? "Interpolation" : "Off";
             case "gpu_feed": return value.equals("on") ? "On" : "Off";
             case "render_res": return value.equals("game") ? "Game default" : value.replace("x", " × ");
             case "upscaler": return upscalerName(value);
@@ -258,7 +260,7 @@ final class Strings {
     }
     /** Short value for the home screen summaries. */
     static String graphicsSummary(Settings s) {
-        String rate = s.get("frame_gen").equals("on") ? "30 → 60 generated" : valueName("frame_rate", s.get("frame_rate"));
+        String rate = s.frameGen() ? "30 → 60 generated" : valueName("frame_rate", s.get("frame_rate"));
         String res = s.get("render_res").equals("game") ? "game resolution" : s.get("render_res").replace("x", " × ");
         String up = s.get("upscaler").equals("off") ? "" : " · " + upscalerName(s.get("upscaler"));
         return presetName(s.preset()) + " · " + rate + " · " + res + up;
@@ -267,7 +269,7 @@ final class Strings {
         return valueName("buttons", s.get("buttons")) + " layout · " + languageName(s.get("game_language")) + " · audio " + s.get("audio_latency");
     }
     static String addedLatency(String key, String value) {
-        if (key.equals("frame_gen")) return value.equals("on") ? "≈ 33 ms" : "none";
+        if (key.equals("frame_gen")) return Settings.generates(value) ? "≈ 33 ms" : "none";
         switch (value) { case "responsive": return "lowest"; case "balanced": return "low"; default: return "up to one more frame"; }
     }
 
@@ -346,6 +348,14 @@ final class Strings {
             default: return "The mods were not imported: " + detail;
         }
     }
+    static final String LSFG_ROW = "Lossless Scaling DLL";
+    static final String LSFG_HINT = "Your own Lossless.dll, for the Lossless Scaling frame generation";
+    static final String LSFG_RESET_ROW = "Remove the Lossless Scaling DLL";
+    static final String LSFG_RESET_HINT = "Deletes the imported file";
+    static final String LSFG_NONE = "Not imported";
+    static final String LSFG_IMPORTED = "Imported · ";
+    static final String LSFG_BAD = "That file is not a Windows DLL: pick Lossless.dll from your own copy of Lossless Scaling.";
+    static final String LSFG_NEEDS_DLL = "Import Lossless.dll under Game data; until then the built-in interpolation is used";
     static final String DRIVER_BAD = "That file is not a Vulkan driver: pick a Turnip .zip (AdrenoTools) or its .so (64-bit ARM).";
     static final String DRIVER_ZIP_BAD = "That zip has no usable driver. Its meta.json must name an existing libraryName, or it must "
             + "contain exactly one .so (64-bit ARM, up to 128 MiB; at most 256 entries).";
@@ -373,6 +383,10 @@ final class Strings {
             + "files, as UltraCam and other exlaunch mods ship them) are not loaded, so a mod that needs one may misbehave. If the game "
             + "stops at start after an import, totk.log names the file; remove the imported mods here. A mods folder placed by hand "
             + "in the game folder is used instead of the import.";
+    static final String LSFG_TEXT = "Optional. Frame generation can use the Lossless Scaling engine (LSFG 3.1) instead of the "
+            + "built-in interpolation. It needs Lossless.dll from your own purchased copy of Lossless Scaling (the file is in its "
+            + "Steam folder); the app does not include it. The file is copied into the app's private storage and only read. "
+            + "Then choose Lossless Scaling under Graphics → Performance → Frame generation.";
     static final String RERUN_TEXT = "Opens setup again to pick different files. Steps that are already finished and still match "
             + "are kept.";
     static final String DELETE_TEXT = "Removes the imported game data from this device. Saves, menu settings and a custom driver stay. "

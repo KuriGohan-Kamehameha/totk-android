@@ -37,8 +37,11 @@ int totk_depth_near_minus_w(void) __attribute__((weak));
 
 static pthread_once_t g_position_once = PTHREAD_ONCE_INIT;
 static unsigned g_position_policy;
+static int g_nan_minmax;       /* TOTK_VK_NAN_MINMAX (startup-only, default on; 0 = off): min / max / saturate with the Switch's NaN rules */
 static void position_init(void) {
     g_position_policy = vk_position_policy(getenv("TOTK_VK_POS_INVARIANT"), getenv("TOTK_VK_POS_NOCONTRACT"));
+    const char *nm = getenv("TOTK_VK_NAN_MINMAX"); g_nan_minmax = !(nm && !strcmp(nm, "0"));
+    LOGV("[nvn-vk] TOTK_VK_NAN_MINMAX=%d (startup-only): FMin/FMax/FClamp %s", g_nan_minmax, g_nan_minmax ? "-> NMin/NMax/NClamp (Maxwell NaN rules)" : "as translated");
     LOGV("[nvn-vk] TOTK_VK_POS_INVARIANT=%u (startup-only): vertex Position Invariant", g_position_policy & 1);
     LOGV("[nvn-vk] TOTK_VK_POS_NOCONTRACT=%u (startup-only): position-feeding float arithmetic NoContraction", g_position_policy >> 1);
 }
@@ -468,6 +471,7 @@ static vk_shader *shader_load(const char *variant, int early_tests) {
         }
         spv = (char *)words; spv_len = nw * 4;
     }
+    if (g_nan_minmax && vk_spirv_nan_minmax((uint32_t *)spv, spv_len / 4) < 0) RED(16, "shader %s: TOTK_VK_NAN_MINMAX: malformed module", variant);
     if (sh->stage == 1) {
         size_t nw = spv_len / 4; uint32_t *words = (uint32_t *)spv;
         if (vk_spirv_early_tests(&words, &nw, sh->early_tests && earlyz_on() && !sh->alpha_func) < 0) {

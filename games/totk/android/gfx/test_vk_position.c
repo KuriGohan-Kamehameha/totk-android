@@ -165,6 +165,21 @@ int main(int argc, char **argv) {
     for (unsigned a = 0; a < 4; a++) for (unsigned b = a + 1; b < 4; b++)
         assert(strcmp(vk_position_cache_suffix(a), vk_position_cache_suffix(b)));
     check_fixture(0, argc == 2 ? argv[1] : NULL); check_fixture(1, argc == 2 ? argv[1] : NULL);
-    puts("vertex position policy, decorations, slices, idempotence and failure atomicity passed");
+    {   /* NaN-safe min / max / clamp: GLSL.std.450 37/40/43 -> 79/80/81 in place; other sets and instructions untouched */
+        uint32_t m[] = {0x07230203, 0x00010300, 0, 40, 0,
+            OP(6, 11), 1, 0x4c534c47, 0x6474732e, 0x3035342e, 0,            /* %1 = OpExtInstImport "GLSL.std.450" */
+            OP(6, 11), 2, 0x45505553, 0x52, 0, 0,                          /* %2 = another set */
+            OP(7, 12), 3, 10, 1, 37, 20, 21,                               /* FMin */
+            OP(7, 12), 3, 11, 1, 40, 20, 21,                               /* FMax */
+            OP(8, 12), 3, 12, 1, 43, 20, 21, 22,                           /* FClamp */
+            OP(7, 12), 3, 13, 1, 39, 20, 21,                               /* SMin: unchanged */
+            OP(7, 12), 3, 14, 2, 37, 20, 21};                              /* same number, other set: unchanged */
+        assert(vk_spirv_nan_minmax(m, sizeof m / 4) == 3);
+        assert(m[21] == 79 && m[28] == 80 && m[35] == 81 && m[43] == 39 && m[50] == 37);
+        assert(vk_spirv_nan_minmax(m, sizeof m / 4) == 0);
+        uint32_t bad[] = {0x07230203, 0x00010300, 0, 8, 0, OP(9, 17)};
+        assert(vk_spirv_nan_minmax(bad, sizeof bad / 4) == -1);
+    }
+    puts("vertex position policy, decorations, slices, idempotence and failure atomicity passed; nan-minmax passed");
     return 0;
 }

@@ -1292,6 +1292,30 @@ static int wb_land(wb_ent *e, enum wb_land_mode mode, uint64_t limit, uint64_t *
     uint64_t start = host_now_ns(); int result = wb_land_inner(e, mode, limit, advanced);
     wb_diag_end(WB_D_LAND, start); return result;
 }
+#ifdef GAME_BOTW
+/* Breath of the Wild reads some tiny GPU renderings on the CPU with no invalidate over their memory (nvn_mtl.m
+   botw_tiny_note / botw_tiny_commit, docs/botw-v1.9.0-port.md): the water material loader draws one colour per water
+   type into a 1x1 RGBA32F target in a CPU-cached pool, one type every second frame, and reads each pixel two frames
+   after drawing it, then draws the next type into the same target; the idle foot placement reads 1x1 targets the same
+   way. On hardware the GPU wrote that memory. Here the rendering reached it only through the settled write-back: after
+   its quiet interval (60 submissions, doubled per landing) the game had long read stale bytes, and once copied out it
+   still waited for the budgeted landing round (vk_res_sweep), which during streaming lands a large target or two and
+   yields, so the next type's rendering cancelled the copy before it landed (13 of 57 water types on the Great Plateau
+   load). Each type then took a stale colour: ponds bright blue, pink or yellow, different in each run. A target of this
+   kind (the Metal backend's bound: one level and layer, at most 256 linear bytes) is copied out at the end of the
+   submission that rendered it, and lands as soon as that copy has completed, ahead of the budgeted round
+   (wb_sweep_locked), unless the CPU wrote the bytes since. TOTK_BOTW_TINY_WB=0 restores the quiet interval and the
+   budgeted round for them (the negative control, as on Metal). */
+static int wb_tiny(const tex_t *t) {
+    static int on = -1; if (on < 0) { const char *e = getenv("TOTK_BOTW_TINY_WB"); on = !(e && !strcmp(e, "0")); if (!on) LOGV("TOTK_BOTW_TINY_WB=0: tiny GPU renderings wait for the settled write-back's quiet interval"); }
+    if (!on) return 0;
+    int bw, bh, bpb = nvn_fmt_bpb(t->d.format, &bw, &bh);
+    if (bpb <= 0 || bw != 1 || bh != 1 || t->d.levels != 1 || t->d.samples > 1 || t->d.target == 2 || t->L.layers > 1) return 0;
+    return (uint64_t)t->d.width * (unsigned)bpb * t->d.height <= 256 && t->L.size <= 4096;
+}
+#else
+#define wb_tiny(t) 0
+#endif
 void vk_wb_record(void) {
     if (!settled_on()) return;
     uint64_t sub = vk_submit_serial();
@@ -1306,7 +1330,7 @@ void vk_wb_record(void) {
             int before = g_nwb; wb_cancel_locked(i); if (before == g_nwb) i++;
             continue;
         }
-        if (e->cancelled || e->fence || sub - e->sub < e->quiet || !mtl_wait(e->producer, 0)) { i++; continue; }
+        if (e->cancelled || e->fence || (!wb_tiny(&e->t) && (sub - e->sub < e->quiet || !mtl_wait(e->producer, 0)))) { i++; continue; }
         if (wb_cpu_newer(e) || !e->tracked) {
             wb_cpu_detail(e, e->tracked ? "cpu-newer-stage" : "untracked");
             g_set_skip_cpu++; wb_ent_drop_locked(i); continue;
@@ -1318,6 +1342,18 @@ void vk_wb_record(void) {
 }
 static void wb_sweep_locked(void) {
     static int next;
+#ifdef GAME_BOTW
+    /* Tiny renderings the CPU reads without an invalidate (wb_tiny) land as soon as their copy has completed, ahead of the
+       budgeted round below: during streaming that round yields after a large landing or two, and a tiny target waited
+       one to three frames there, past the game's read and often past its next rendering, which cancelled it unlanded. */
+    for (int j = 0; j < g_nwb; ) {
+        wb_ent *e = &g_wb[j];
+        if (e->cancelled || !e->fence || !wb_tiny(&e->t) || !mtl_wait(e->fence, 0)) { j++; continue; }
+        int result = wb_land(e, WB_IDLE, WB_LAND_CHUNK, NULL);
+        if (result == 2 || result == 3) { j++; continue; }
+        wb_ent_drop_locked(j);
+    }
+#endif
     uint64_t start = host_now_ns(), bytes = 0, chunks = 0; int yielded = 0, work = 0, scans = 0, count = g_nwb;
     int i = g_nwb ? next % g_nwb : 0;
     while (g_nwb && scans < count) {

@@ -12,7 +12,9 @@
 extern "C" {
 #endif
 
-#define DUO_PORT_ABI 1u
+struct CompanionState;             /* runtime/companion_state.h */
+
+#define DUO_PORT_ABI 2u
 
 typedef struct DuoPort {
     uint32_t abi, size;                 /* DUO_PORT_ABI, sizeof(DuoPort) */
@@ -40,6 +42,9 @@ typedef struct DuoPort {
     /* Called by the host on each thread it starts itself, before the thread does anything else; the threads those
        create inherit what it sets. The port puts the companion on the cores the game's threads do not use. May be NULL. */
     void (*place_thread)(const char *name);
+    /* The second screen's common game state (runtime/companion_state.h), from the host's tick thread each time a
+       sample of the game is complete. The port keeps the last one for the app (CompanionNative.state). May be NULL. */
+    void (*state)(const struct CompanionState *state);
 } DuoPort;
 
 /* package_root is being filled by someone else (the app unpacking its APK): wait for <package_root>/.ready. */

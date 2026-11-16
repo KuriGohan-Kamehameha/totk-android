@@ -9,6 +9,7 @@ import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.View;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -21,15 +22,16 @@ import java.nio.file.Files;
 /** The second screen of the Breath of the Wild build: a Surface the native companion host (duo/duo_host.cpp in
  *  libduo_host.so) draws the Eden Duo page into. This view owns nothing but the Surface: it hands it over when it
  *  exists, takes it back when it goes, and passes touches on. The page itself, its 60 Hz clock and its reads of the
- *  game all live in the native library.
+ *  game all live in the native library, and so does the choice of page: to the shell (CompanionScreen) this screen
+ *  keeps none, and the common game state is nothing it needs to be told (the native page reads the game itself).
  *
  *  The companion package (pages and code-drawn images; no game art) ships in the APK under assets/duo/ and is unpacked
  *  into the app's files once per installed build, because the native runtime reads it as a folder. */
-public final class DuoSurfaceView extends SurfaceView implements SurfaceHolder.Callback {
+public final class DuoSurfaceView extends SurfaceView implements SurfaceHolder.Callback, CompanionScreen {
     private static final String TAG = "TotkDuo";
     private static boolean loaded;
     static {
-        // Also what makes the two native methods resolvable; the runtime opens the same library by itself for the game's side.
+        // Also what makes the native methods resolvable; the runtime opens the same library by itself for the game's side.
         try { System.loadLibrary("duo_host"); loaded = true; }
         catch (UnsatisfiedLinkError missing) { loaded = false; }
     }
@@ -39,16 +41,12 @@ public final class DuoSurfaceView extends SurfaceView implements SurfaceHolder.C
     private static native void nativeSurface(Surface surface, int width, int height);
     /** The pointers now down, in view pixels; count 0 when all are lifted. */
     private static native void nativeTouch(int[] ids, float[] xs, float[] ys, int count);
-    /** What the title module published last, for the stick LEDs (BifrostState): out[0..8] in duo_host.cpp's LedNames
-     *  order, out[9] the age of that sample in milliseconds. False before the first sample. */
-    private static native boolean nativeLedState(long[] out);
-    private static volatile boolean ledState = true;
-    /** Any thread. False when there is nothing to read: no library, an older library, or no sample yet. */
-    public static boolean gameState(long[] out) {
-        if (!loaded || !ledState) return false;
-        try { return nativeLedState(out); }
-        catch (UnsatisfiedLinkError older) { ledState = false; return false; }
-    }
+
+    @Override public View view() { return this; }
+    /** The Eden Duo page moves between its pages by itself (the game's state and its own touch targets). */
+    @Override public void setPage(int page) { }
+    @Override public int page() { return -1; }
+    @Override public void onGameState(CompanionState state) { }
 
     public DuoSurfaceView(Context context) {
         super(context);

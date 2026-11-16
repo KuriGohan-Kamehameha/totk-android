@@ -16,6 +16,11 @@ implementation (snapshot format, polling, the native action checks and the devic
 - **Map**: three layers (sky, surface, depths). Drag and pinch to move and zoom, pick a layer by hand; *Recenter* goes
   back to following Link.
 
+Pages slide in from the side they are on, hearts that change swell for a moment, and Link's marker glides on the map
+and minimap instead of jumping between readings. The title screen, loading screens (and the game's start) and an
+unsupported game version each get a screen of their own with the game's logo, instead of a dimmed last page. Nothing
+is redrawn while nothing changes.
+
 The pictures (map, icons, item art) are made on your device from your own game data during setup (*Second-screen art*)
 and can be rebuilt from *Game data*. They are optional: the game runs without them. Art made by an earlier version of
 the app is updated on its own when the menu opens; the game stays playable meanwhile.
@@ -105,8 +110,10 @@ once. Without Bifrost nothing runs: no thread, no read of the game, no broadcast
 | Low hearts (at or under one heart or a quarter of the maximum; ends one heart above) | red `#ff1100`, stutter | the same |
 | Title, loading, no state | nothing sent | nothing sent |
 
-The state comes from what the second screen already reads: the companion snapshot in Tears of the Kingdom (so only
-with the companion on), the Eden Duo module's published values in Breath of the Wild (`duo/duo_host.cpp` `LedNames`).
+The state is the second screen's common game state (`runtime/companion_state.h`: status, in game, menu open, tablet
+owned, hearts, page), which both games fill and the app reads through one getter (`CompanionNative.state`): in Tears of
+the Kingdom from the companion's snapshot reader (so only with the companion on), in Breath of the Wild from the Eden
+Duo module's published values (`duo/duo_state.h`, so only with the companion library running).
 The table and the timing are in `android/java/com/aure/totk/BifrostLooks.java`; `tests/test_android_bifrost.py` runs
 them against Bifrost's own validator and rate limiter rules.
 

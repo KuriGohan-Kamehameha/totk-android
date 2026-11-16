@@ -42,6 +42,9 @@ public final class CompanionNative implements DataSource {
     public static native int request(String action, String category, int slot, String actor, int partition, long pouchGen);
     /** {"seq":n,"state":"pending|done|refused|failed","reason":"…"} for the latest request, null for any other seq. */
     public static native String result(int seq);
+    /** The common game state (runtime/companion_state.h) as CompanionState.FIELDS words; false: none to read. */
+    private static native boolean nativeState(long[] out);
+    private static native void nativePage(int page);
 
     @Override public String read(int detail) {
         if (!loaded) return "{\"schema\":1,\"seq\":0,\"status\":\"unsupported\"}";
@@ -57,6 +60,16 @@ public final class CompanionNative implements DataSource {
         if (!loaded) return -3;
         try { return request(action, category, slot, actor, partition, pouchGen); }
         catch (UnsatisfiedLinkError unavailable) { loaded = false; return -3; }
+    }
+    @Override public boolean state(long[] out) {
+        if (!loaded) return false;
+        try { return nativeState(out); }
+        catch (UnsatisfiedLinkError unavailable) { loaded = false; return false; }
+    }
+    @Override public void page(int page) {
+        if (!loaded) return;
+        try { nativePage(page); }
+        catch (UnsatisfiedLinkError unavailable) { loaded = false; }
     }
     @Override public String outcome(int seq) {
         if (!loaded) return null;

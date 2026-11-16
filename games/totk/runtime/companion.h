@@ -7,6 +7,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include "companion_state.h"
 
 /* Copies n bytes from address a without faulting on a bad address: 1 on success (host_safe_read in the app). */
 typedef int (*companion_read_fn)(uint64_t a, void *out, size_t n);
@@ -21,6 +22,12 @@ enum { COMPANION_LIVE = 0, COMPANION_FULL = 1 };
    the JSON length, 0 if memory ran out. Safe to call from any thread; every guest read goes through rd, and nothing in
    the game is written or called. */
 size_t companion_snapshot(uintptr_t main_base, int detail, companion_read_fn rd, CompanionBuf *out);
+
+/* The common second-screen state (companion_state.h) of the same game, from the same reads and with the same care as
+   the live snapshot: its status ("ready" is in game; a sample that moved while it was taken is the title), the hearts
+   the snapshot's player section shows, and the pause-menu flag of its actionState. The page is left unknown (-1): the
+   Java screen owns it. Safe from any thread; nothing in the game is written or called. */
+void companion_state(uintptr_t main_base, companion_read_fn rd, CompanionState *out);
 
 /* MurmurHash3 x86_32 with seed 0: the game's GameData flag and enum value hash. */
 uint32_t companion_hash(const char *s);

@@ -57,6 +57,19 @@ public final class CompanionGateProbe {
         check(!CompanionNative.action(1, 16), "out-of-range button must remain rejected");
         for (int i = 0; i < 3; i++) check(count(i) == (enabled ? 4 : 0), "disabled JNI must not read guest state");
         check(count(3) == (enabled ? 2 : 0), "disabled JNI must not synthesize input");
+        // The common state: one getter, gated like the rest; the page the screen publishes comes back in it.
+        long[] words = new long[com.aure.totk.companion.CompanionState.FIELDS];
+        com.aure.totk.companion.CompanionState state = new com.aure.totk.companion.CompanionState();
+        check(source.state(words) == enabled, "state getter must honor gate");
+        check(!source.state(new long[3]), "a short array is refused");
+        if (enabled) {
+            check(state.set(words) && state.status == com.aure.totk.companion.CompanionState.READY && state.inGame
+                    && state.menuOpen && state.tabletOwned && state.life == 13 && state.maxLife == 20 && state.page == -1,
+                    "state words in the contract's order: " + java.util.Arrays.toString(words));
+            source.page(2);
+            check(source.state(words) && state.set(words) && state.page == 2, "published page must come back in the state");
+            source.page(-1);
+        }
 
         SnapshotPoller poller = new SnapshotPoller(source, (snapshot, stale) -> {});
         poller.start(); poller.start();

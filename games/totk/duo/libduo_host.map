@@ -4,7 +4,6 @@
         duo_host_frame;
         Java_com_aure_totk_companion_DuoSurfaceView_nativeSurface;
         Java_com_aure_totk_companion_DuoSurfaceView_nativeTouch;
-        Java_com_aure_totk_companion_DuoSurfaceView_nativeLedState;
     local:
         *;
 };

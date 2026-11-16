@@ -59,7 +59,7 @@ def main(argv=None):
                 info.compress_type = zipfile.ZIP_STORED if Path(name).suffix.lower() in ('.png', '.webp') else zipfile.ZIP_DEFLATED
                 archive.writestr(info, data)
         args.out.write_bytes(build_apk.v2_sign(buf.getvalue(), key, cert))
-    print(f'wrote {args.out}; launch {PACKAGE}/{ACTIVITY} with --ei page 0|1|2 --es fixture ready|title|starting|unsupported|sky|depths|unavailable|loading|nativebuff|actions|event|menuonly|aiming [--ei delayMs N] [--ez here true]')
+    print(f'wrote {args.out}; launch {PACKAGE}/{ACTIVITY} with --ei page 0|1|2 --es fixture ready|title|starting|unsupported|sky|depths|unavailable|loading|motion|nativebuff|actions|event|menuonly|aiming [--ei delayMs N] [--ez here true]')
 
 
 if __name__ == '__main__':

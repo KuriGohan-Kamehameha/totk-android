@@ -288,7 +288,36 @@ public final class PresentationController implements DisplayManager.DisplayListe
         touchInProgress = false;
         main.removeCallbacks(autoReturnInput);
         if (previous != null) { previous.setOnDismissListener(null); previous.dismiss(); }
+        screen(null);
         report();
+    }
+    // ---- the screen shown (CompanionScreen, whatever draws it) and the common game state ----
+    /** How often the shell looks: the state is for what a screen shows between its own reads, not for timing. */
+    private static final long STATE_MS = 250;
+    private CompanionScreen screen;
+    private final long[] stateWords = new long[CompanionState.FIELDS];
+    private final CompanionState gameState = new CompanionState();
+    private long stateKey = -1;
+    private int publishedPage = -1;
+    /** While a screen is shown: publishes its page to the common state (DataSource.page) when it changes, reads that
+     * state through the one getter (DataSource.state) and tells the screen when it differs from what it was told. */
+    private final Runnable statePump = new Runnable() {
+        @Override public void run() {
+            CompanionScreen current = screen;
+            if (current == null || closed) return;
+            int page = current.page();
+            if (page != publishedPage) { publishedPage = page; source.page(page); }
+            if (!source.state(stateWords) || !gameState.set(stateWords)) gameState.clear();
+            long key = gameState.key();
+            if (key != stateKey) { stateKey = key; current.onGameState(gameState); }
+            main.postDelayed(this, STATE_MS);
+        }
+    };
+    private void screen(CompanionScreen next) {
+        main.removeCallbacks(statePump);
+        screen = next; stateKey = -1;
+        if (next != null) main.post(statePump);
+        else if (publishedPage != -1) { publishedPage = -1; source.page(-1); }
     }
     /** These presentation displays as DisplayClass sees them (own = the caller's display, never a candidate). */
     private static DisplayClass.Screen[] screens(Display[] all, Display own) {
@@ -364,11 +393,13 @@ public final class PresentationController implements DisplayManager.DisplayListe
             @Override protected void onCreate(Bundle state) {
                 super.onCreate(state);
                 immersive(getWindow(), true);
-                setContentView(CompanionContent.create(getContext(), source, initialPage));
+                CompanionScreen created = CompanionContent.create(getContext(), source, initialPage);
+                setContentView(created.view());
+                screen(created);
             }
         };
         next.setOnDismissListener(dialog -> {
-            if (shown == next) { shown = null; displayId = -1; cover.dismiss(); report(); if (!closed) main.post(this::refresh); }
+            if (shown == next) { shown = null; displayId = -1; screen(null); cover.dismiss(); report(); if (!closed) main.post(this::refresh); }
         });
         shown = next; displayId = selected.getDisplayId();
         try { next.show(); report(); }

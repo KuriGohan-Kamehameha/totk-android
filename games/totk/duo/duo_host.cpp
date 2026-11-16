@@ -41,6 +41,7 @@
 #include "core/mods/dsmod_module_extensions.h"
 #include "core/mods/mod_runtime.h"
 #include "duo_host.h"
+#include "duo_state.h"
 #include "video_core/dsmod/aux_routing.h"
 
 #ifdef __ANDROID__
@@ -79,22 +80,9 @@ ANativeWindow* g_window;
 #endif
 std::atomic<u64> g_posted{0};
 
-// ---- the stick-LED bridge's view of the game (duo_host.h LedTap) -------------------------------------------------
-// The order is the Java side's (BifrostLooks.fromDuo). The module writes botw.state.title and .loading twice in a
-// sample (publish_states, then the UI context's answer): the last one stands, as in the runtime's own snapshot.
-constexpr std::array<const char*, LedValues> LedNames{
-    "botw.state.valid",    "botw.state.title",         "botw.state.loading",
-    "botw.state.menu_open", "botw.state.slate_obtained", "botw.ready.heal.valid",
-    "botw.ready.heal.life", "botw.ready.heal.max",       "botw.state.unknown",
-};
-std::array<int64_t, LedValues> g_led_pending{}; // tick thread only
-std::array<std::atomic<int64_t>, LedValues> g_led{};
-std::atomic<int64_t> g_led_at{-1}; // steady-clock milliseconds of the last commit; -1: none yet
-std::atomic<u32> g_led_seq{0};     // odd while a commit is being written
-
-int64_t NowMs() {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
-}
+// ---- the common game state (duo_host.h LedTap, duo_state.h) --------------------------------------------------------
+constexpr std::array<const char*, DUO_STATE_VALUES> LedNames{DUO_STATE_NAMES};
+std::array<int64_t, DUO_STATE_VALUES> g_led_pending{}; // tick thread only
 
 bool EnvIs(const char* name, const char* value) {
     const char* const set = std::getenv(name);
@@ -454,30 +442,12 @@ void LedTap(const char* name, int64_t value) {
 }
 
 void LedCommit() {
-    g_led_seq.fetch_add(1, std::memory_order_acq_rel);
-    for (size_t i = 0; i < g_led.size(); ++i) {
-        g_led[i].store(g_led_pending[i], std::memory_order_relaxed);
+    if (g_port.state == nullptr) {
+        return;
     }
-    g_led_at.store(NowMs(), std::memory_order_relaxed);
-    g_led_seq.fetch_add(1, std::memory_order_acq_rel);
-}
-
-bool LedState(int64_t* out, int64_t& age_ms) {
-    for (int tries = 0; tries < 8; ++tries) {
-        const u32 before = g_led_seq.load(std::memory_order_acquire);
-        if ((before & 1) != 0) {
-            continue;
-        }
-        for (size_t i = 0; i < g_led.size(); ++i) {
-            out[i] = g_led[i].load(std::memory_order_relaxed);
-        }
-        const int64_t at = g_led_at.load(std::memory_order_relaxed);
-        if (g_led_seq.load(std::memory_order_acquire) == before) {
-            age_ms = at < 0 ? -1 : NowMs() - at;
-            return at >= 0;
-        }
-    }
-    return false; // a commit was in flight every time: the caller asks again in a moment
+    CompanionState state;
+    duo_state_fill(g_led_pending.data(), &state);
+    g_port.state(&state);
 }
 
 // ---- test hooks (duo/test/host_test.cpp); the Android presenter below uses the same entry points -----------------
@@ -657,22 +627,6 @@ DUO_EXPORT JNIEXPORT void JNICALL Java_com_aure_totk_companion_DuoSurfaceView_na
     }
     down_count = n;
     g_system->GPU().DSModAux().SetTouch(std::span{points}.first(n)); // a finger no longer listed ends there
-}
-
-/// DuoSurfaceView.nativeLedState: the game facts for the app's stick-LED bridge (LedState), then the sample's age in
-/// milliseconds. Reads nothing of the game: the tick thread's last sample is all there is.
-DUO_EXPORT JNIEXPORT jboolean JNICALL Java_com_aure_totk_companion_DuoSurfaceView_nativeLedState(JNIEnv* env, jclass,
-                                                                                               jlongArray out) {
-    std::array<int64_t, Duo::LedValues> values{};
-    int64_t age = -1;
-    if (out == nullptr || env->GetArrayLength(out) < Duo::LedValues + 1 || !Duo::LedState(values.data(), age)) {
-        return JNI_FALSE;
-    }
-    std::array<jlong, Duo::LedValues + 1> copy{};
-    std::copy(values.begin(), values.end(), copy.begin());
-    copy[Duo::LedValues] = age;
-    env->SetLongArrayRegion(out, 0, static_cast<jsize>(copy.size()), copy.data());
-    return JNI_TRUE;
 }
 #endif // __ANDROID__
 

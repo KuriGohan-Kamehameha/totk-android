@@ -24,10 +24,13 @@
 #include <stb_image_write.h>
 
 #include "duo_host.h"
+#include "duo_state.h"
 
 namespace {
 std::string g_romfs;
 uint64_t g_frames;
+CompanionState g_state; // the last common state the host handed to the port (tick thread; read after Stop)
+uint64_t g_states;
 
 int SafeRead(uint64_t a, void* out, size_t n) {
     static thread_local int fds[2] = {-1, -1};
@@ -122,6 +125,10 @@ int main(int argc, char** argv) {
     port.package_root = argv[1];
     port.data_dir = data_dir.c_str();
     port.frames = [] { return g_frames; };
+    port.state = [](const CompanionState* state) {
+        g_state = *state;
+        ++g_states;
+    };
 
     // An unmapped address must be refused, not crash: the property the whole reader rests on.
     uint64_t probe = 0;
@@ -149,6 +156,13 @@ int main(int argc, char** argv) {
     Duo::Stop();
     std::fprintf(stderr, "test: %llu ticks, %llu page frames taken, last %ux%u\n",
                  static_cast<unsigned long long>(ran), static_cast<unsigned long long>(frames_taken), w, h);
+    std::fprintf(stderr, "test: %llu common states, last status %d in_game %d menu %d tablet %d life %d/%d\n",
+                 static_cast<unsigned long long>(g_states), g_state.status, g_state.in_game, g_state.menu_open,
+                 g_state.tablet_owned, g_state.life, g_state.max_life);
+    if (ran > 0 && g_states == 0) {
+        std::fprintf(stderr, "test: the host ticked but handed no common state to the port\n");
+        return 1;
+    }
     if (latest.empty() || w == 0 || h == 0) {
         std::fprintf(stderr, "test: FAIL, no page was published\n");
         return 1;

@@ -94,7 +94,22 @@ public final class PreviewActivity extends Activity {
             settle();
             if (loadingAfter > 0 && SystemClock.elapsedRealtime() - loadedAt >= loadingAfter)
                 return "{\"schema\":1,\"seq\":2,\"status\":\"starting\"}";
-            return payload;
+            JSONObject motion = root.optJSONObject("motion");
+            return motion == null ? payload : moving(motion, SystemClock.elapsedRealtime() - loadedAt);
+        }
+        /** Fixture "motion" ({"radius", "periodMs", "lifeStep", "lifeEveryMs"}): the player walks a circle round the
+         * fixture's position and loses, then regains, lifeStep quarter hearts every lifeEveryMs, so the marker glide and
+         * the heart pulse can be seen without the game. */
+        private String moving(JSONObject motion, long elapsed) throws JSONException {
+            JSONObject moved = new JSONObject(payload), player = moved.getJSONObject("player");
+            JSONArray pos = player.getJSONArray("pos");
+            double radius = motion.optDouble("radius", 40), angle = 2 * Math.PI * elapsed / Math.max(1000, motion.optLong("periodMs", 20000));
+            pos.put(0, pos.getDouble(0) + radius * Math.cos(angle));
+            pos.put(2, pos.getDouble(2) + radius * Math.sin(angle));
+            player.put("heading", Math.floorMod((long)Math.toDegrees(angle) + 180, 360L));
+            long every = Math.max(500, motion.optLong("lifeEveryMs", 3000));
+            if ((elapsed / every) % 2 == 1) player.put("life", Math.max(0, player.optInt("life") - motion.optInt("lifeStep", 6)));
+            return moved.toString();
         }
         @Override public boolean send(int kind, int arg) { return false; }
 

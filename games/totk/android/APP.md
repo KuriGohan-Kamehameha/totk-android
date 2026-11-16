@@ -1492,8 +1492,13 @@ Tapping an equipped weapon, bow, shield or armor card on Adventure opens that it
 The Canvas menu uses the game's own Purah Pad background, edge ornaments, icon tabs, item slots/cursor,
 detail backing, map frame/north mark and gauge parts when present in the generated asset index. There is no
 Purah Pad title/status bar or repeated section captions: only the selected inventory category and map layer
-are named. A loading transition dims the last good page without adding a caption; explanatory text is kept
-for waiting, title-screen, unsupported-build and unavailable-data states.
+are named. The title screen, a loading transition (and the game's start) and an unsupported build each get a view
+of their own over the whole panel (logo, one heading, a few words; loading adds a turning mark), faded in, with
+nothing to touch; unavailable data keeps its explanatory text on the page.
+Motion (`Motion.java`): a page change slides the old page out as last drawn and the new one in (220 ms); a change
+of the hearts swells the changed hearts and settles (700 ms); the map and minimap glide the player marker between
+two position samples (160 ms; a jump over 80 units snaps). Frames are scheduled only while something moves, the
+loading mark steps 8 times a second, and an idle screen is not redrawn.
 The menu keeps warm hairline rules, cream icons on dark tab plates, and translucent dark item slots:
 equipped items get a small marker, not a solid blue fill. The fused material and its durability share one
 detail row; partial stamina capacity is an arc over a faint complete ring.
@@ -1505,7 +1510,8 @@ with system-font fallback where required; no game artwork, translations or fonts
 
 Snapshots are polled off the UI thread (8 Hz live, 1 Hz full; full refresh on page/category changes).
 An unchanged snapshot does not redraw. Missing assets use vector/text fallbacks; absent pouch data is shown as
-unavailable, not an empty inventory. Loading keeps the last ready data dimmed for at most 30 seconds.
+unavailable, not an empty inventory. Loading shows the loading view for at most 30 seconds after the last ready
+sample, then the starting or title view.
 Presentation windows do not take gamepad focus; display add/remove/change recreates the companion and detach
 stops its poller and asset worker. The companion is shown on one secondary display only (never the game's display)
 and only while the game activity is started: Home dismisses it and returning shows it again.
@@ -1667,8 +1673,10 @@ adb -s emulator-5570 emu kill
 ```
 
 Pages: 0 Adventure, 1 Inventory, 2 Map. Fixtures: `ready`, `starting`, `title`, `unsupported`, `sky`, `depths`,
-`unavailable` (ready without a pouch), `loading` (ready for 1.5 seconds, then starting; dims for 30 seconds)
-and `nativebuff` (native integer meal-effect ID, 40 hearts, 16 battery cells and temporary extra capacity).
+`unavailable` (ready without a pouch), `loading` (ready for 1.5 seconds, then starting; the loading view for 30
+seconds, then the starting view), `motion` (ready, with the player walking a 40-unit circle every 20 seconds and
+losing and regaining 6 quarter hearts every 3 seconds: the marker glide and the heart pulse; tap the tabs for the
+page slide) and `nativebuff` (native integer meal-effect ID, 40 hearts, 16 battery cells and temporary extra capacity).
 Action fixtures: `actions` (full hearts; Equip/Unequip/Eat/Drink/Take out/Fuse to arrows with mixed enabled and
 disabled actions), `event` (every action blocked by a cutscene), `menuonly` (Eat/Drink only from the game's inventory,
 exercising the UI path no native action uses yet) and `aiming` (Fuse to arrows enabled, Take out disabled). The

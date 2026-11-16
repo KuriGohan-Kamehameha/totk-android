@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 JAVA = ROOT / 'games/totk/android/java/com/aure/totk'
 LOOKS, BRIDGE = JAVA / 'BifrostLooks.java', JAVA / 'BifrostBridge.java'
+STATE = JAVA / 'companion/CompanionState.java'   # the common game state the looks are fed from: no Android either
 
 # The smallest android.* that BifrostBridge touches. Time and the worker's queue are the test's: Handler runs what is
 # due when the probe advances the clock, so the bridge's whole life runs on one thread and in a fixed order.
@@ -239,28 +240,35 @@ public final class BifrostProbe {
         equal(botw.want(state(false, false, true, 0, 12)), null);
         equal(botw.want(state(true, false, true, 6, 12)).name, "sheikah-slate");       // the latch ended with the session
 
-        // Tears of the Kingdom: the live snapshot as runtime/companion_snapshot.c writes it.
+        // The common game state (runtime/companion_state.h) as CompanionNative.state gives it: status, in game, menu
+        // open, tablet owned, life, max life, page, age ms. Both games arrive here the same way.
+        com.aure.totk.companion.CompanionState common = new com.aure.totk.companion.CompanionState();
         State s = new State();
-        String ready = "{\"schema\":1,\"status\":\"ready\",\"seq\":41,\"gameVersion\":\"1.4.3\",\"player\":{\"life\":10,\"maxLife\":16,"
-                + "\"extraLife\":0,\"breakLife\":0,\"temporaryLife\":0,\"rupees\":345,\"poes\":0,\"maxStamina\":1000,\"pos\":[1,2,3]},"
-                + "\"actionState\":{\"ok\":false,\"reason\":\"menu\",\"pauseMenu\":true,\"aiming\":false}}";
-        require(BifrostLooks.fromSnapshot(ready, s) && s.inGame && s.open && s.tablet && s.life == 10 && s.maxLife == 16, "ready snapshot");
-        require(BifrostLooks.fromSnapshot(ready.replace("\"pauseMenu\":true", "\"pauseMenu\":false"), s) && !s.open, "menu closed");
-        for (String status : new String[]{"title", "starting", "unsupported", "noPlayer"})
-            require(!BifrostLooks.fromSnapshot("{\"schema\":1,\"status\":\"" + status + "\",\"seq\":2}", s) && !s.inGame, status);
-        require(!BifrostLooks.fromSnapshot(null, s) && !BifrostLooks.fromSnapshot("", s) && !BifrostLooks.fromSnapshot("{}", s), "no snapshot");
-        require(BifrostLooks.fromSnapshot("{\"status\":\"ready\"}", s) && s.life == -1 && s.maxLife == -1 && !s.open, "ready without a player");
-
-        // Breath of the Wild: valid, title, loading, menu_open, slate_obtained, heal.valid, heal.life, heal.max, unknown, age ms.
-        require(BifrostLooks.fromDuo(new long[]{1, 0, 0, 0, 1, 1, 9, 12, 0, 16}, s) && s.inGame && !s.open && s.tablet && s.life == 9 && s.maxLife == 12, "world");
-        require(BifrostLooks.fromDuo(new long[]{1, 0, 0, 1, 0, 0, -1, -1, 0, 16}, s) && s.open && !s.tablet && s.life == -1, "menu before the slate");
-        require(BifrostLooks.fromDuo(new long[]{1, 0, 0, 0, -1, 1, 9, 12, 0, 16}, s) && s.tablet, "slate not read counts as taken");
-        require(!BifrostLooks.fromDuo(new long[]{1, 1, 0, 0, 1, 1, 9, 12, 0, 16}, s) && !s.inGame, "title");
-        require(!BifrostLooks.fromDuo(new long[]{1, 0, 1, 0, 1, 1, 9, 12, 0, 16}, s), "loading");
-        require(!BifrostLooks.fromDuo(new long[]{0, -1, -1, 0, -1, 0, -1, -1, 1, 16}, s), "torn sample");
-        require(!BifrostLooks.fromDuo(new long[]{1, 0, 0, 0, 1, 1, 9, 12, 0, 2001}, s), "a sample two seconds old");
-        require(!BifrostLooks.fromDuo(new long[]{1, 0, 0, 0, 1, 1, 9, 12, 0, -1}, s), "no sample");
-        require(!BifrostLooks.fromDuo(new long[3], s) && !BifrostLooks.fromDuo(null, s), "short answer");
+        final int READY = com.aure.totk.companion.CompanionState.READY, TITLE = com.aure.totk.companion.CompanionState.TITLE,
+                LOADING = com.aure.totk.companion.CompanionState.LOADING;
+        // Tears of the Kingdom, as companion_state fills it: a save with the menu up, then closed; hearts not read.
+        require(common.set(new long[]{READY, 1, 1, 1, 10, 16, 0, 0}) && BifrostLooks.fromState(common, s)
+                && s.inGame && s.open && s.tablet && s.life == 10 && s.maxLife == 16, "ready, menu open");
+        require(common.set(new long[]{READY, 1, 0, 1, 10, 16, 2, 0}) && BifrostLooks.fromState(common, s) && !s.open, "menu closed");
+        require(common.set(new long[]{READY, 1, 0, 1, -1, -1, -1, 0}) && BifrostLooks.fromState(common, s)
+                && s.life == -1 && s.maxLife == -1 && !s.open, "ready without hearts");
+        for (long status : new long[]{TITLE, com.aure.totk.companion.CompanionState.STARTING,
+                com.aure.totk.companion.CompanionState.UNSUPPORTED, LOADING}) {
+            common.set(new long[]{status, 0, 0, 1, -1, -1, -1, 0});
+            require(!BifrostLooks.fromState(common, s) && !s.inGame, "not in game: status " + status);
+        }
+        require(!common.set(null) && !BifrostLooks.fromState(common, s) && !BifrostLooks.fromState(null, s), "no state");
+        require(!common.set(new long[]{0, 0, 0, 1, -1, -1, -1, 0}) && !BifrostLooks.fromState(common, s), "nothing read");
+        // Breath of the Wild, as duo_state_fill makes it of the module's values (tests/test_companion_state.py runs that).
+        require(common.set(new long[]{READY, 1, 0, 1, 9, 12, -1, 16}) && BifrostLooks.fromState(common, s)
+                && s.inGame && !s.open && s.tablet && s.life == 9 && s.maxLife == 12, "world");
+        require(common.set(new long[]{READY, 1, 1, 0, -1, -1, -1, 16}) && BifrostLooks.fromState(common, s)
+                && s.open && !s.tablet && s.life == -1, "menu before the slate");
+        common.set(new long[]{LOADING, 0, 0, 1, -1, -1, -1, 16});
+        require(!BifrostLooks.fromState(common, s), "loading");
+        require(!common.set(new long[]{READY, 1, 0, 1, 9, 12, -1, 2001}) && !BifrostLooks.fromState(common, s), "a sample two seconds old");
+        require(!common.set(new long[]{READY, 1, 0, 1, 9, 12, -1, -1}) && !BifrostLooks.fromState(common, s), "no sample");
+        require(!common.set(new long[3]) && !BifrostLooks.fromState(common, s), "short answer");
     }
 
     /** Every command of a long random session passes Bifrost's validator, and the timing passes its limiter. */
@@ -561,7 +569,7 @@ class AndroidBifrostTests(unittest.TestCase):
             raise unittest.SkipTest('javac/java not found')
         cls.temp = tempfile.TemporaryDirectory(prefix='totk-bifrost-')
         cls.work = Path(cls.temp.name)
-        sources = [LOOKS, BRIDGE]
+        sources = [LOOKS, BRIDGE, STATE]
         for name, text in {**STUBS, 'com/aure/totk/BifrostProbe.java': PROBE}.items():
             path = cls.work / 'src' / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -587,26 +595,37 @@ class AndroidBifrostTests(unittest.TestCase):
 
     def test_looks_need_no_android(self):
         self.assertNotIn('import android', LOOKS.read_text())
+        self.assertNotIn('android.', STATE.read_text())
 
-    def test_each_build_has_its_state_source(self):
-        default = (JAVA / 'BifrostState.java').read_text()
-        botw = (ROOT / 'games/totk/android/java-botw/com/aure/totk/BifrostState.java').read_text()
-        self.assertIn('GAME = BifrostLooks.TOTK', default)
-        self.assertIn('fromSnapshot', default)
-        self.assertIn('GAME = BifrostLooks.BOTW', botw)
-        self.assertIn('fromDuo', botw)
-        # The names the native host keeps are the ones the title module publishes, in the order fromDuo reads them.
-        host = (ROOT / 'games/totk/duo/duo_host.cpp').read_text()
-        names = host.split('LedNames{', 1)[1].split('};', 1)[0]
-        self.assertEqual([n.strip().strip('"') for n in names.replace('\n', ' ').split(',') if n.strip()],
-                         ['botw.state.valid', 'botw.state.title', 'botw.state.loading', 'botw.state.menu_open',
-                          'botw.state.slate_obtained', 'botw.ready.heal.valid', 'botw.ready.heal.life', 'botw.ready.heal.max',
-                          'botw.state.unknown'])
+    def test_one_state_source_for_every_build(self):
+        # One BifrostState, fed by the common state's one getter; a game build only says whether its tablet can be missing.
+        source = (JAVA / 'BifrostState.java').read_text()
+        self.assertIn('SOURCE.state(WORDS)', source)
+        self.assertIn('BifrostLooks.fromState', source)
+        self.assertIn('CompanionContent.TABLET_CAN_BE_MISSING ? BifrostLooks.BOTW : BifrostLooks.TOTK', source)
+        botw = ROOT / 'games/totk/android/java-botw/com/aure/totk'
+        self.assertFalse((botw / 'BifrostState.java').exists())
+        self.assertIn('TABLET_CAN_BE_MISSING = false', (JAVA / 'companion/CompanionContent.java').read_text())
+        self.assertIn('TABLET_CAN_BE_MISSING = true', (botw / 'companion/CompanionContent.java').read_text())
+        looks = LOOKS.read_text()
+        self.assertNotIn('fromSnapshot', looks)
+        self.assertNotIn('fromDuo', looks)
+        self.assertNotIn('nativeLedState', (botw / 'companion/DuoSurfaceView.java').read_text())
+        # The names the native host keeps are the ones the title module publishes, in the order duo_state_fill reads them.
+        header = (ROOT / 'games/totk/duo/duo_state.h').read_text()
+        names = header.split('#define DUO_STATE_NAMES', 1)[1].split('\n\n', 1)[0].replace('\\', ' ')
+        names = [n.strip().strip('"') for n in names.replace('\n', ' ').split(',') if n.strip()]
+        self.assertEqual(names, ['botw.state.valid', 'botw.state.title', 'botw.state.loading', 'botw.state.menu_open',
+                                 'botw.state.slate_obtained', 'botw.ready.heal.valid', 'botw.ready.heal.life',
+                                 'botw.ready.heal.max'])
+        order = header.split('enum {', 1)[1].split('}', 1)[0]
+        self.assertEqual([n.strip() for n in order.replace('\n', ' ').split(',')],
+                         ['DUO_STATE_VALID', 'DUO_STATE_TITLE', 'DUO_STATE_LOADING', 'DUO_STATE_MENU_OPEN', 'DUO_STATE_SLATE',
+                          'DUO_STATE_HEAL_VALID', 'DUO_STATE_LIFE', 'DUO_STATE_MAX_LIFE', 'DUO_STATE_VALUES'])
         modules = ROOT / 'games/totk/duo/vendor/companions/native/modules'
         published = ''.join((modules / f).read_text() for f in ('botw_states.h', 'botw_heal_advisor.h', '01007EF00011E000.cpp'))
-        for name in names.replace('\n', ' ').split(','):
-            if name.strip():
-                self.assertIn(name.strip(), published)
+        for name in names:
+            self.assertIn(name, published)
 
     def test_manifest_asks_for_bifrost_only(self):
         import importlib.util

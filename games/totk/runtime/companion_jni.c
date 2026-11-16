@@ -12,6 +12,11 @@
                                         -> companion_request(): an item action for the game's frame end (seq > 0, or
                                            -1 busy, -2 refused now, -3 unsupported / disabled, -4 invalid)
      String result(int seq)             -> companion_result() JSON, null for an unknown seq
+     boolean nativeState(long[] out)    -> the common second-screen state (companion_state.h): COMPANION_STATE_FIELDS
+                                           words, false when there is none. Tears of the Kingdom: read now
+                                           (companion_state()); Breath of the Wild: the companion host's last sample
+                                           (duo_port.c). The one getter the stick LEDs and the shell both use.
+     void nativePage(int page)          -> the page the Java screen shows, for that state's page field
    With TOTK_COMPANION=0 every game-facing entry point returns its "off" value without inspecting the game. */
 #include "companion.h"
 #include "autoload.h"
@@ -19,6 +24,9 @@
 #include "runtime.h"
 #include "world_survey.h"
 #include "android_pause.h"
+#ifdef GAME_BOTW
+#include "duo_link.h"
+#endif
 #include <jni.h>
 #if defined(__ANDROID__)
 #include <android/log.h>
@@ -150,6 +158,28 @@ static jstring JNICALL native_snapshot(JNIEnv *env, jclass cls, jint detail) {
     return r;
 }
 
+/* The common state. The page is the Java screen's unless the game side filled one in. */
+static _Atomic int shown_page = -1;
+static void JNICALL native_page(JNIEnv *env, jclass cls, jint page) {
+    (void)env; (void)cls;
+    atomic_store(&shown_page, page);
+}
+static jboolean JNICALL native_state(JNIEnv *env, jclass cls, jlongArray out) {
+    if (!out || (*env)->GetArrayLength(env, out) < COMPANION_STATE_FIELDS || !native_enabled(env, cls)) return JNI_FALSE;
+    CompanionState s; int64_t age = 0, words[COMPANION_STATE_FIELDS];
+#ifdef GAME_BOTW
+    if (!runtime_duo_state(&s, &age)) return JNI_FALSE;
+#else
+    companion_state((uintptr_t)runtime_module_base("main"), guest_read, &s);
+#endif
+    if (s.page < 0) s.page = atomic_load(&shown_page);
+    companion_state_words(&s, age, words);
+    jlong copy[COMPANION_STATE_FIELDS];
+    for (int i = 0; i < COMPANION_STATE_FIELDS; i++) copy[i] = words[i];
+    (*env)->SetLongArrayRegion(env, out, 0, COMPANION_STATE_FIELDS, copy);
+    return JNI_TRUE;
+}
+
 /* The Mac key codes input.c maps to Switch buttons, by libnx Npad bit index (A, B, X, Y, LS, RS, L, R, ZL, ZR, Plus,
    Minus, Left, Up, Right, Down). The synthetic key is separate from the controller's own state (input.c ORs both), so a
    pulse never releases a button the player is holding. */
@@ -202,6 +232,8 @@ __attribute__((visibility("default"))) jint JNI_OnLoad(JavaVM *vm, void *reserve
         {"action", "(II)Z", (void *)native_action},
         {"request", "(Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;IJ)I", (void *)native_request},
         {"result", "(I)Ljava/lang/String;", (void *)native_result},
+        {"nativeState", "([J)Z", (void *)native_state},
+        {"nativePage", "(I)V", (void *)native_page},
     };
     if ((*env)->RegisterNatives(env, cls, methods, sizeof methods / sizeof *methods)) {
         (*env)->ExceptionClear(env); fprintf(stderr, "[companion] RegisterNatives failed\n");

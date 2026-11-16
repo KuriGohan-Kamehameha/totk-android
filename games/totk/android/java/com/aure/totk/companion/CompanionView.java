@@ -15,8 +15,9 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.Locale;
 
-/** Responsive, touch-first Purah Pad. There is no fixed design canvas or idle animation loop. */
-public final class CompanionView extends View implements SnapshotPoller.Listener {
+/** Responsive, touch-first Purah Pad. There is no fixed design canvas or idle animation loop: what moves (Motion) asks
+ * for frames only while it moves. */
+public final class CompanionView extends View implements SnapshotPoller.Listener, CompanionScreen {
     private int INK = 0xffe9e5d5, MUTED = 0xffaaa997, GOLD = 0xffdcc08a, GREEN = 0xff77d7b1;
     private int PANEL = 0xc015211e, CURSOR = 0xffeee8cc, BACKGROUND = 0xff0d1a18, ACCENT_DIM = 0xff405247;
     private static final String[] PAGE_KEYS = {"adventure", "inventory", "map"};
@@ -62,6 +63,14 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
     private final ArrayList<ItemActions.Request> buttonRequests = new ArrayList<>();
     private ItemActions.State actionView;
     private boolean revealSelection;
+    /** What moves, and the clock value of the frame being drawn. */
+    private final Motion motion = new Motion();
+    private long frameNow;
+    private int gameStatus = CompanionState.NONE;
+    /** The page a slide leaves, as it was drawn last. */
+    private final android.graphics.Picture outgoing = new android.graphics.Picture();
+    private boolean outgoingRecorded;
+    private final Runnable frame = this::invalidate;
     private static final class Target {
         final RectF box; final int code;
         Target(RectF box, int code) { this.box = new RectF(box); this.code = code; }
@@ -90,6 +99,7 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
     }
     @Override protected void onDetachedFromWindow() {
         poller.stop();
+        removeCallbacks(frame);
         if (assets != null) { assets.close(); assets = null; }
         super.onDetachedFromWindow();
     }
@@ -112,11 +122,61 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
     }
     @Override public void changed(Snapshot value, boolean loading) {
         data = value; stale = loading;
+        long now = android.os.SystemClock.uptimeMillis();
+        motion.show(Motion.view(value.status, loading, gameStatus), now);
+        if (motion.view() == Motion.CONTENT) {
+            if (value.player.has("life")) motion.life(value.player.optInt("life"), now);
+            motion.target(value.coordinate(0), value.coordinate(2), value.player.optDouble("heading", Double.NaN), now);
+        }
         setContentDescription("Purah Pad, " + value.status + (loading ? ", loading; last known data" : "")
                 + ", " + PAGE_NAMES[page]);
         invalidate();
     }
-    public void setPage(int value) { page = Math.max(0, Math.min(2, value)); scroll = 0; selection = -1; poller.requestFull(); invalidate(); }
+    @Override public View view() { return this; }
+    @Override public int page() { return page; }
+    /** The common state names a loading screen where the game side can tell one; the rest of it this view already has,
+     * in more detail, from its own snapshot. */
+    @Override public void onGameState(CompanionState state) {
+        if (state.status == gameStatus) return;
+        gameStatus = state.status;
+        motion.show(Motion.view(data.status, stale, gameStatus), android.os.SystemClock.uptimeMillis());
+        invalidate();
+    }
+    @Override public void setPage(int value) {
+        int next = Math.max(0, Math.min(2, value));
+        // The page being left slides out as it looked: recorded once, before its scroll and selection are dropped.
+        if (next != page && assets != null && actionView != null && motion.view() == Motion.CONTENT && content.height() > 0) {
+            // Drawing a page also lists its touch targets and action requests: those of the frame on screen stay.
+            ArrayList<Target> keptTargets = new ArrayList<>(targets);
+            ArrayList<ItemActions.Request> keptRequests = new ArrayList<>(buttonRequests);
+            frameNow = android.os.SystemClock.uptimeMillis();
+            drawPage(outgoing.beginRecording(getWidth(), getHeight()), page);
+            outgoing.endRecording();
+            targets.clear(); targets.addAll(keptTargets);
+            buttonRequests.clear(); buttonRequests.addAll(keptRequests);
+            outgoingRecorded = true;
+            motion.slide(page, next, android.os.SystemClock.uptimeMillis());
+        }
+        page = next; scroll = 0; selection = -1; poller.requestFull(); invalidate();
+    }
+    private void drawPage(Canvas c, int which) {
+        if (which == 0) adventure(c);
+        else if (which == 1) inventory(c);
+        else fullMap(c);
+    }
+    /** One more frame only while something moves (Motion.nextFrame): at the display's rate for the short transitions,
+     * slower for the marker's glide and the loading mark. */
+    private void schedule() {
+        boolean pages = motion.view() == Motion.CONTENT;
+        long delay = motion.nextFrame(frameNow, pages && page == 0, pages && page != 1);
+        removeCallbacks(frame);
+        if (delay == 0) postInvalidateOnAnimation();
+        else if (delay > 0) postDelayed(frame, delay);
+    }
+    private void marker(MapRenderer renderer) {
+        if (motion.markerKnown()) renderer.marker(motion.markerX(frameNow), motion.markerZ(frameNow), motion.heading(frameNow));
+        else renderer.noMarker();
+    }
     private float dp(float value) { return value * u; }
     /** Interactive controls are at least 44 real dp tall, whatever the panel unit. */
     private float touch() { return Math.max(dp(48), 44 * density); }
@@ -193,6 +253,7 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
         if (assets == null) return;
         targets.clear(); buttonRequests.clear();
         actionView = poller.actions.state();
+        frameNow = android.os.SystemClock.uptimeMillis();
         INK = assets.color("text", 0xffe9e5d5); MUTED = assets.color("textDim", 0xffaaa997);
         GOLD = assets.color("gold", 0xffdcc08a); GREEN = assets.color("accent", 0xff77d7b1);
         PANEL = assets.color("panel", 0xc015211e); CURSOR = assets.color("cursor", 0xffeee8cc);
@@ -208,6 +269,17 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
         assets.decor(c, "deco_left", rect(0, h - leftHeight, ornamentWidth, h), u);
         assets.decor(c, "deco_right", rect(w - ornamentWidth, h - rightHeight, w, h), u);
         assets.decor(c, "footer", rect(margin, h - dp(1), w - margin, h), u);
+        float fade = motion.fade(frameNow);
+        if (motion.view() != Motion.CONTENT) {
+            // Title, loading, unsupported: views of their own on the whole screen, with nothing to touch.
+            content.set(margin, margin, w - margin, h - margin);
+            int layer = fade < 1 ? c.saveLayerAlpha(0, 0, w, h, Math.round(255 * fade)) : c.save();
+            if (content.height() > 0) stateView(c, motion.view());
+            c.restoreToCount(layer);
+            scrollMax = 0; outgoingRecorded = false;
+            schedule();
+            return;
+        }
         float tabTop = dp(6), tw = Math.min(dp(128), (w - margin * 2) / 3);
         float tabLeft = (w - tw * 3) / 2;
         for (int i = 0; i < 3; i++) tab(c, assets.pageIcon(PAGE_KEYS[i]), PAGE_SYMBOLS[i],
@@ -215,37 +287,63 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
         if (!assets.decor(c, "header_line", rect(margin, dp(64), w - margin, dp(65)), u)) divider(c, margin, w - margin, dp(64));
         content.set(margin, dp(78), w - margin, h - dp(22));
         if (content.height() <= 0) return;
-        if (!"ready".equals(data.status)) { waiting(c); return; }
-        int save = c.saveLayerAlpha(content, stale ? 130 : 255);
-        if (page == 0) adventure(c);
-        else if (page == 1) inventory(c);
-        else fullMap(c);
+        int save = fade < 1 ? c.saveLayerAlpha(content, Math.round(255 * fade)) : c.save();
+        c.clipRect(content);
+        float slide = motion.slide(frameNow);
+        if (slide < 1 && outgoingRecorded) {
+            // The page left behind moves out as recorded, the new one moves in live (its touch targets are already final).
+            float span = content.width() * motion.slideDirection();
+            c.save(); c.translate(-span * slide, 0); c.drawPicture(outgoing); c.restore();
+            c.translate(span * (1 - slide), 0);
+        } else outgoingRecorded = false;
+        drawPage(c, page);
         c.restoreToCount(save);
+        schedule();
     }
-    private void waiting(Canvas c) {
+    /** Title, loading (also the start, before the game's state can be read) or unsupported: the game's logo over one
+     * heading and a few words. Loading adds a turning mark, the only thing here that moves. */
+    private void stateView(Canvas c, int view) {
+        boolean unsupported = view == Motion.UNSUPPORTED, loading = view == Motion.LOADING;
+        boolean starting = loading && !"ready".equals(data.status);
+        String heading = unsupported ? "Unsupported game build" : loading ? starting ? "Starting" : "Loading" : "Waiting for a save";
+        String words = unsupported ? "The companion cannot read this game version. Your game remains on the main screen."
+                : starting ? "Starting the adventure. Load a save on the main screen to connect your Purah Pad."
+                : loading ? "Your Purah Pad returns as soon as the game is back."
+                : "Choose Continue or load a save on the main screen. Your inventory and map will appear here.";
         float width = Math.min(content.width() - dp(48), dp(500)), x = content.centerX() - width / 2;
-        float y = content.centerY() - dp(45);
-        assets.decor(c, "title_plate", rect(x - dp(12), y + dp(32), x + width + dp(12), y + dp(78)), u);
+        float mark = loading ? dp(52) : 0;
         if (getHeight() < dp(400)) {
-            text(c, "unsupported".equals(data.status) ? "Unsupported game build" : "Waiting for a save", x, content.top + dp(35), 20, INK, width);
-            wrap(c, "Load a supported save on the main screen to connect the companion.", x, content.top + dp(48), width, 13, MUTED, 3);
-            scrollMax = 0; return;
+            if (loading) loadingMark(c, x + dp(14), content.top + dp(28), dp(10));
+            text(c, heading, x + (loading ? dp(36) : 0), content.top + dp(35), 20, INK, width - (loading ? dp(36) : 0));
+            wrap(c, unsupported || loading ? words : "Load a supported save on the main screen to connect the companion.",
+                    x, content.top + dp(48), width, 13, MUTED, 3);
+            return;
         }
+        float y = content.centerY() - dp(20) - mark / 2;
         Bitmap logo = assets.ui("logo");
         if (logo != null) {
-            float lw = Math.min(width, dp(340)), lh = Math.min(dp(140), lw * logo.getHeight() / logo.getWidth());
+            float lw = Math.min(width, dp(380)), lh = Math.min(Math.min(dp(160), y - content.top), lw * logo.getHeight() / logo.getWidth());
+            lw = lh * logo.getWidth() / logo.getHeight();
             paint.setColor(Color.WHITE); c.drawBitmap(logo, null, rect(content.centerX() - lw / 2, y - lh, content.centerX() + lw / 2, y), paint);
         } else {
             text(c, "THE LEGEND OF ZELDA", x, y - dp(22), 15, GOLD, width);
             text(c, "TEARS OF THE KINGDOM", x, y + dp(10), 25, INK, width);
         }
-        boolean unsupported = "unsupported".equals(data.status);
-        text(c, unsupported ? "Unsupported game build" : "Waiting for a save", x, y + dp(62), 23, INK, width);
-        wrap(c, unsupported ? "The companion cannot read this game version. Your game remains on the main screen."
-                : "starting".equals(data.status) ? "Starting the adventure. Load a save on the main screen to connect your Purah Pad."
-                : "Choose Continue or load a save on the main screen. Your inventory and map will appear here.",
-                x, y + dp(82), width, 15, MUTED, 4);
-        scrollMax = 0;
+        if (loading) { loadingMark(c, content.centerX(), y + dp(48), dp(16)); y += mark; }
+        assets.decor(c, "title_plate", rect(x - dp(12), y + dp(32), x + width + dp(12), y + dp(78)), u);
+        text(c, heading, x, y + dp(62), 23, INK, width);
+        wrap(c, words, x, y + dp(82), width, 15, MUTED, 4);
+    }
+    /** Eight dots on a ring; the leading one steps round eight times a second (Motion.loadingStep). */
+    private void loadingMark(Canvas c, float cx, float cy, float radius) {
+        int lead = Motion.loadingStep(frameNow);
+        paint.setStyle(Paint.Style.FILL);
+        for (int i = 0; i < Motion.LOADING_STEPS; i++) {
+            int behind = Math.floorMod(lead - i, Motion.LOADING_STEPS);
+            double angle = Math.PI * 2 * i / Motion.LOADING_STEPS - Math.PI / 2;
+            paint.setColor((GOLD & 0x00ffffff) | Math.max(40, 255 - behind * 36) << 24);
+            c.drawCircle(cx + radius * (float)Math.cos(angle), cy + radius * (float)Math.sin(angle), radius * (behind == 0 ? .2f : .15f), paint);
+        }
     }
     private void adventure(Canvas c) {
         boolean columns = content.width() >= dp(600);
@@ -326,6 +424,7 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
         }
         float ry = columns ? content.top + dp(6) : content.top + leftTotal + gap;
         float mx = rightX + rightWidth / 2;
+        marker(minimap);
         minimap.draw(c, rect(mx - mapSize / 2, ry, mx + mapSize / 2, ry + mapSize), data, true);
         text(c, coordinates(), rightX + dp(12), ry + mapSize + dp(26), 14, INK, rightWidth - dp(24));
         float bw = (rightWidth - dp(32)) / 2;
@@ -416,6 +515,10 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
             int filled = Math.max(0, Math.min(4, (yellow ? max + extra : life) - i * 4));
             boolean gloom = !yellow && i * 4 + 4 > max - broken;
             RectF box = rect(hx, hy, hx + dp(18), hy + dp(18));
+            // A change of the hearts shows for a moment: the ones that changed swell and settle (Motion.heartScale).
+            float swell = motion.heartScale(i, frameNow);
+            c.save();
+            if (swell != 1) c.scale(swell, swell, box.centerX(), box.centerY());
             heart(c, box, 0xff404941);
             if (filled > 0) { c.save(); c.clipRect(box.left, box.top, box.left + box.width() * filled / 4, box.bottom); heart(c, box, yellow ? 0xffead375 : 0xffe7796b); c.restore(); }
             if (gloom) {
@@ -429,6 +532,7 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
                     c.drawLine(hx + dp(6), hy + dp(9), hx + dp(11), hy + dp(14), paint);
                 }
             }
+            c.restore();
         }
     }
     private void heart(Canvas c, RectF b, int color) {
@@ -783,6 +887,7 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
         float coordinateWidth = Math.min(paint.measureText(position), content.width() * .55f - dp(8));
         text(c, position, content.right - dp(8) - coordinateWidth, content.top + bh + dp(28), 11, MUTED, coordinateWidth);
         mapBounds.set(content.left, content.top + bh + dp(46), content.right, content.bottom);
+        marker(map);
         map.draw(c, mapBounds, data, false);
         scrollMax = 0;
     }
@@ -813,6 +918,7 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
         }
     }
     @Override public boolean onTouchEvent(MotionEvent event) {
+        if (motion.view() != Motion.CONTENT) { pressed = -1; dragging = false; return true; }   // nothing to touch there
         scaleDetector.onTouchEvent(event);
         float x = event.getX(), y = event.getY();
         switch (event.getActionMasked()) {

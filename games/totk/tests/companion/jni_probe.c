@@ -36,6 +36,12 @@ size_t companion_snapshot(uintptr_t main_base, int detail, companion_read_fn rea
     out->len = strlen(out->data); out->cap = out->len + 1;
     return out->len;
 }
+/* The common state of a game in a save with the menu up: 13 of 20 hearts quarters, page left to the Java screen. */
+void companion_state(uintptr_t main_base, companion_read_fn read, CompanionState *out) {
+    (void)main_base; (void)read;
+    companion_state_clear(out);
+    out->status = COMPANION_STATE_READY; out->in_game = 1; out->menu_open = 1; out->life = 13; out->max_life = 20;
+}
 void runtime_input_key_synthetic(unsigned code, int down) {
     (void)code;
     if (down) atomic_fetch_add(&presses, 1);
@@ -121,7 +127,17 @@ static jstring (JNICALL *snapshot_fn)(JNIEnv *, jclass, jint);
 static jboolean (JNICALL *action_fn)(JNIEnv *, jclass, jint, jint);
 static jint (JNICALL *request_fn)(JNIEnv *, jclass, jstring, jstring, jint, jstring, jint, jlong);
 static jstring (JNICALL *result_fn)(JNIEnv *, jclass, jint);
+static jboolean (JNICALL *state_fn)(JNIEnv *, jclass, jlongArray);
+static void (JNICALL *page_fn)(JNIEnv *, jclass, jint);
 static JNIEnv fixture_env;
+/* A long[] as the fixture's JNIEnv sees it. */
+typedef struct { jsize length; jlong data[COMPANION_STATE_FIELDS + 2]; } LongArray;
+static jsize JNICALL array_length(JNIEnv *env, jarray a) { (void)env; return ((LongArray *)a)->length; }
+static void JNICALL set_longs(JNIEnv *env, jlongArray a, jsize start, jsize n, const jlong *v) {
+    (void)env; LongArray *array = (LongArray *)a;
+    assert(start >= 0 && n >= 0 && start + n <= array->length);
+    memcpy(array->data + start, v, (size_t)n * sizeof *v);
+}
 static jclass JNICALL find_class(JNIEnv *env, const char *name) {
     (void)env;
     if (!strcmp(name, "com/aure/totk/TotkActivity")) return NULL;   /* NativeActivity-only: the hint stays unbound */
@@ -130,7 +146,7 @@ static jclass JNICALL find_class(JNIEnv *env, const char *name) {
 }
 static void JNICALL exception_clear(JNIEnv *env) { (void)env; }
 static jint JNICALL register_methods(JNIEnv *env, jclass cls, const JNINativeMethod *methods, jint count) {
-    (void)env; (void)cls; assert(count == 8);
+    (void)env; (void)cls; assert(count == 10);
     for (jint i = 0; i < count; i++) {
         if (!strcmp(methods[i].name, "nativeEnabled")) enabled_fn = methods[i].fnPtr;
         else if (!strcmp(methods[i].name, "nativeCoverEnabled")) cover_enabled_fn = methods[i].fnPtr;
@@ -146,6 +162,14 @@ static jint JNICALL register_methods(JNIEnv *env, jclass cls, const JNINativeMet
         else if (!strcmp(methods[i].name, "action")) action_fn = methods[i].fnPtr;
         else if (!strcmp(methods[i].name, "request")) request_fn = methods[i].fnPtr;
         else if (!strcmp(methods[i].name, "result")) result_fn = methods[i].fnPtr;
+        else if (!strcmp(methods[i].name, "nativeState")) {
+            assert(!strcmp(methods[i].signature, "([J)Z"));
+            state_fn = methods[i].fnPtr;
+        }
+        else if (!strcmp(methods[i].name, "nativePage")) {
+            assert(!strcmp(methods[i].signature, "(I)V"));
+            page_fn = methods[i].fnPtr;
+        }
         else assert(0);
     }
     return 0;
@@ -167,6 +191,7 @@ int main(int argc, char **argv) {
     static const __typeof__(**(JNIEnv *)0) functions = {
         .FindClass = find_class, .RegisterNatives = register_methods, .NewStringUTF = new_string,
         .GetStringUTFChars = get_chars, .ReleaseStringUTFChars = release_chars, .ExceptionClear = exception_clear,
+        .GetArrayLength = array_length, .SetLongArrayRegion = set_longs,
     };
     static const __typeof__(**(JavaVM *)0) invocation = {.GetEnv = get_env};
     fixture_env = &functions; JavaVM vm = &invocation;
@@ -174,7 +199,8 @@ int main(int argc, char **argv) {
     unsetenv("TOTK_COMPANION");
     unsetenv("TOTK_COMPANION_COVER");
     assert(JNI_OnLoad(&vm, NULL) == JNI_VERSION_1_6);
-    assert(enabled_fn && cover_enabled_fn && cover_setting_fn && cover_log_fn && snapshot_fn && action_fn && request_fn && result_fn);
+    assert(enabled_fn && cover_enabled_fn && cover_setting_fn && cover_log_fn && snapshot_fn && action_fn && request_fn && result_fn &&
+           state_fn && page_fn);
     assert(atomic_load(&runtime_companion_tick));   /* the frame-end hook is installed at load, nothing pending */
     assert(!atomic_load(&runtime_companion_pending));
     jstring action = (jstring)"equip", category = (jstring)"weapons", actor = (jstring)"Weapon_Sword_001";
@@ -197,6 +223,10 @@ int main(int argc, char **argv) {
         assert(request_fn(&fixture_env, NULL, action, category, 0, actor, 0, 1) == COMPANION_UNSUPPORTED);
         assert(!result_fn(&fixture_env, NULL, 1));
         assert(!atomic_load(&requests) && !atomic_load(&modules));
+        /* off: no common state either, and still nothing of the game looked at */
+        LongArray words = {.length = COMPANION_STATE_FIELDS};
+        page_fn(&fixture_env, NULL, 1);
+        assert(!state_fn(&fixture_env, NULL, (jlongArray)&words) && !atomic_load(&modules) && !atomic_load(&reads));
     } else {
         assert(snapshot_fn(&fixture_env, NULL, COMPANION_LIVE));
         assert(!action_fn(&fixture_env, NULL, 2, 10));
@@ -204,6 +234,17 @@ int main(int argc, char **argv) {
         assert(request_fn(&fixture_env, NULL, NULL, category, 0, actor, 0, 1) == COMPANION_INVALID);
         assert(request_fn(&fixture_env, NULL, action, category, 0, actor, 0, 1) == 1 && atomic_load(&requests) == 1);
         assert(result_fn(&fixture_env, NULL, 1));
+        /* the common state: refused into a short array; otherwise the fields in order, the page the screen published */
+        LongArray shorter = {.length = COMPANION_STATE_FIELDS - 1}, words = {.length = COMPANION_STATE_FIELDS + 1};
+        words.data[COMPANION_STATE_FIELDS] = 77;
+        assert(!state_fn(&fixture_env, NULL, (jlongArray)&shorter));
+        assert(state_fn(&fixture_env, NULL, (jlongArray)&words));
+        static const jlong READY[COMPANION_STATE_FIELDS] = {COMPANION_STATE_READY, 1, 1, 1, 13, 20, -1, 0};
+        assert(!memcmp(words.data, READY, sizeof READY) && words.data[COMPANION_STATE_FIELDS] == 77);
+        page_fn(&fixture_env, NULL, 2);
+        assert(state_fn(&fixture_env, NULL, (jlongArray)&words) && words.data[6] == 2);
+        page_fn(&fixture_env, NULL, -1);
+        assert(state_fn(&fixture_env, NULL, (jlongArray)&words) && words.data[6] == -1);
         pthread_t threads[4];
         for (unsigned i = 0; i < 4; i++) assert(!pthread_create(&threads[i], NULL, press_action, NULL));
         for (unsigned i = 0; i < 4; i++) assert(!pthread_join(threads[i], NULL));

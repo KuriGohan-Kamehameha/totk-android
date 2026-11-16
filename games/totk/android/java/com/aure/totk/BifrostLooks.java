@@ -76,7 +76,7 @@ final class BifrostLooks {
                               new Look("slate-inactive-open", 0xffb870, 77, false, 60, "STATIC", 0.5f, 255), LOW_HEARTS },
     };
 
-    // ---- the game state a build can read (BifrostState, one per game) ----
+    // ---- the game state the feed works from (BifrostState reads it from the common state) ----
     static final class State {
         /** A save is loaded and the world is running or paused in its own menu: not the title, not a loading screen. */
         boolean inGame;
@@ -93,44 +93,16 @@ final class BifrostLooks {
     static int lowOn(int maxLife) { return Math.max(4, (maxLife + 3) / 4); }
     static int lowOff(int maxLife) { return Math.min(maxLife, lowOn(maxLife) + 4); }
 
-    /** Tears of the Kingdom: the live companion snapshot (runtime/companion_snapshot.c, detail 0). */
-    static boolean fromSnapshot(String json, State out) {
+    /** The second screen's common game state (CompanionState, the same for every game) as the feed's. False, and no
+     *  state, outside a save: title, loading, nothing read. */
+    static boolean fromState(com.aure.totk.companion.CompanionState s, State out) {
         out.clear();
-        if (json == null || !"ready".equals(text(json, "status"))) return false;
+        if (s == null || !s.inGame) return false;
         out.inGame = true;
-        out.open = json.contains("\"pauseMenu\":true");
-        out.life = (int)number(json, "life", -1);
-        out.maxLife = (int)number(json, "maxLife", -1);
-        return true;
-    }
-    private static String text(String json, String key) {
-        String mark = "\"" + key + "\":\"";
-        int at = json.indexOf(mark), end = at < 0 ? -1 : json.indexOf('"', at + mark.length());
-        return end < 0 ? null : json.substring(at + mark.length(), end);
-    }
-    private static long number(String json, String key, long missing) {
-        String mark = "\"" + key + "\":";
-        int at = json.indexOf(mark);
-        if (at < 0) return missing;
-        int from = at + mark.length(), to = from;
-        if (to < json.length() && json.charAt(to) == '-') to++;
-        while (to < json.length() && Character.isDigit(json.charAt(to))) to++;
-        try { return Long.parseLong(json.substring(from, to)); } catch (NumberFormatException none) { return missing; }
-    }
-
-    /** Breath of the Wild: the values duo_host keeps of what the title module published last (duo/duo_host.cpp
-     *  LedNames, in this order), then the age of that sample in milliseconds. */
-    static final int DUO_VALUES = 10;
-    static boolean fromDuo(long[] v, State out) {
-        out.clear();
-        if (v == null || v.length < DUO_VALUES) return false;
-        long valid = v[0], title = v[1], loading = v[2], menu = v[3], slate = v[4], healValid = v[5], life = v[6], max = v[7],
-                age = v[9];
-        if (age < 0 || age > 2000 || valid != 1 || title != 0 || loading != 0) return false;
-        out.inGame = true;
-        out.open = menu == 1;
-        out.tablet = slate != 0;   // -1 (not read) counts as taken
-        if (healValid == 1 && life >= 0 && max >= 4 && max <= 400) { out.life = (int)life; out.maxLife = (int)max; }
+        out.open = s.menuOpen;
+        out.tablet = s.tabletOwned;
+        out.life = s.life;
+        out.maxLife = s.maxLife;
         return true;
     }
 

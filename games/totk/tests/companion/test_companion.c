@@ -195,6 +195,13 @@ int main(void) {
     uint8_t *other = alloc(0x20a0000);   /* covers every checked code word */
     if (!companion_snapshot((uintptr_t)other, COMPANION_FULL, fake_read, &b)) return 1;
     expect(b.data, "\"status\":\"unsupported\""); reject(b.data, "\"player\"");
+    /* the common second-screen state (companion_state.h) says the same, in its own terms */
+    CompanionState cs;
+    companion_state((uintptr_t)other, fake_read, &cs);
+    check(cs.status == COMPANION_STATE_UNSUPPORTED && !cs.in_game && !cs.menu_open && cs.tablet_owned == 1 && cs.life == -1 &&
+          cs.max_life == -1 && cs.page == -1, "state: another build is unsupported and carries nothing");
+    companion_state(0, fake_read, &cs);
+    check(cs.status == COMPANION_STATE_STARTING && !cs.in_game, "state: no main yet is starting");
 
     uint8_t *main_ = alloc(MAIN_SIZE);
     for (unsigned i = 0; i < sizeof CODE_AT / sizeof *CODE_AT; i++) put32(main_ + CODE_AT[i], code[i]);
@@ -286,6 +293,8 @@ int main(void) {
     /* the title screen keeps a Player actor at the origin: still the title */
     companion_snapshot((uintptr_t)main_, COMPANION_LIVE, fake_read, &b);
     expect(b.data, "\"status\":\"title\""); reject(b.data, "\"player\"");
+    companion_state((uintptr_t)main_, fake_read, &cs);
+    check(cs.status == COMPANION_STATE_TITLE && !cs.in_game && cs.life == -1 && cs.max_life == -1, "state: the title is not in game");
     putf(actor + 0x2b4, -254.5f); putf(actor + 0x2b8, -900); putf(actor + 0x2bc, 1100);
     float rot[9] = {0, 0, 1, 0, 1, 0, -1, 0, 0};   /* facing +X: east */
     memcpy(actor + 0x2c0, rot, sizeof rot);
@@ -293,6 +302,13 @@ int main(void) {
     companion_snapshot((uintptr_t)main_, COMPANION_LIVE, fake_read, &b);
     expect(b.data, "\"status\":\"ready\"");
     expect(b.data, "\"life\":52"); expect(b.data, "\"maxLife\":60"); expect(b.data, "\"extraLife\":4");
+    companion_state((uintptr_t)main_, fake_read, &cs);   /* what the stick LEDs and the shell get of the same sample */
+    check(cs.status == COMPANION_STATE_READY && cs.in_game == 1 && cs.menu_open == 0 && cs.tablet_owned == 1 && cs.life == 52 &&
+          cs.max_life == 60 && cs.page == -1, "state: ready carries the snapshot's hearts");
+    int64_t words[COMPANION_STATE_FIELDS];
+    companion_state_words(&cs, 7, words);
+    static const int64_t WORDS[COMPANION_STATE_FIELDS] = {COMPANION_STATE_READY, 1, 0, 1, 52, 60, -1, 7};
+    check(!memcmp(words, WORDS, sizeof words), "state: the getter's word order");
     expect(b.data, "\"breakLife\":8"); expect(b.data, "\"rupees\":1234"); expect(b.data, "\"poes\":56");
     expect(b.data, "\"maxStamina\":2000"); expect(b.data, "\"maxEnergy\":3000"); expect(b.data, "\"ability\":\"OneTouchBond\"");
     expect(b.data, "\"pos\":[-254.5,-900,1100]"); expect(b.data, "\"heading\":90");
@@ -342,6 +358,9 @@ int main(void) {
     swap_to[0] = (uintptr_t)actor; swap_to[1] = (uintptr_t)actor2; swap_after = 0; reads = 0; swap_every = 1;
     companion_snapshot((uintptr_t)main_, COMPANION_FULL, fake_read, &b);
     expect(b.data, "\"status\":\"title\""); reject(b.data, "\"player\""); reject(b.data, "\"pouch\"");
+    reads = 0;
+    companion_state((uintptr_t)main_, fake_read, &cs);
+    check(cs.status == COMPANION_STATE_TITLE && !cs.in_game && cs.life == -1, "state: a sample that keeps moving is the transition");
     after_read = NULL;
 
     /* ---------- item actions (companion_actions.c) ---------- */
@@ -463,6 +482,8 @@ int main(void) {
     pouch_obj[0x1fcc0] = 1; tick(M, &f); result_is(seq, "refused", "menu");
     gen = pouch_gen(M, &b);
     expect(b.data, "\"actionState\":{\"ok\":false,\"reason\":\"menu\",\"pauseMenu\":true,\"aiming\":false}");
+    companion_state(M, fake_read, &cs);
+    check(cs.status == COMPANION_STATE_READY && cs.in_game == 1 && cs.menu_open == 1, "state: the pause menu is the open tablet");
     check(companion_request(M, "unequip", "weapons", 1, "Weapon_Sword_002", 1, gen) == COMPANION_REFUSED, "refused in the pause menu");
     check(T.equips == calls, "nothing called with the pause menu open");
     /* the load transition: after any blocked state the world must stay ok for 1 s and 20 frames with the same player

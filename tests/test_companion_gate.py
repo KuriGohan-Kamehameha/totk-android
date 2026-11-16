@@ -142,9 +142,12 @@ public final class AssetStore {
     # CompanionContent (real, below) builds one for the controller; the gate itself never does.
     'com/aure/totk/companion/CompanionView.java': '''package com.aure.totk.companion;
 import android.content.Context;
-public final class CompanionView extends android.view.View {
+public final class CompanionView extends android.view.View implements CompanionScreen {
     CompanionView(Context context, DataSource source) {}
-    void setPage(int page) {}
+    public android.view.View view() { return this; }
+    public void setPage(int page) {}
+    public int page() { return 0; }
+    public void onGameState(CompanionState state) {}
 }''',
     'com/aure/totk/setup/SaveMirror.java': '''package com.aure.totk.setup;
 import android.content.Context;
@@ -240,6 +243,8 @@ class CompanionGate(unittest.TestCase):
             'com/aure/totk/TextRules.java',
             'com/aure/totk/companion/CompanionContent.java',   # the gate: enabled and the art is there
             'com/aure/totk/companion/CompanionNative.java',
+            'com/aure/totk/companion/CompanionScreen.java',
+            'com/aure/totk/companion/CompanionState.java',
             'com/aure/totk/companion/DataSource.java',
             'com/aure/totk/companion/DisplayClass.java',
             'com/aure/totk/companion/ItemActions.java',

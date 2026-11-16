@@ -24,15 +24,13 @@ void BlitFrame(uint32_t* out, uint32_t out_w, uint32_t out_h, uint32_t stride, c
                uint32_t width, uint32_t height);
 uint64_t Ticks();
 
-// A few of the title module's published numbers, kept for the app's stick-LED bridge (DuoSurfaceView.gameState):
-// whether a save is running, whether the game's menu is up, whether the Sheikah Slate is owned, the hearts.
+// A few of the title module's published numbers become the second screen's common game state
+// (runtime/companion_state.h; duo_state.h says which and how): whether a save is running, whether the game's menu is
+// up, whether the Sheikah Slate is owned, the hearts. The app's shell and its stick-LED bridge read it from the port.
 /// Tick thread, from the module's publish_i64 while it samples: remembers `name` if it is one of them.
 void LedTap(const char* name, int64_t value);
-/// Tick thread, when that sample is complete: the remembered values become the ones readers get.
+/// Tick thread, when that sample is complete: the remembered values go to the port as one state (DuoPort.state).
 void LedCommit();
-/// Any thread: the last complete sample into out[0..LedValues), and its age in milliseconds; false before the first.
-inline constexpr int LedValues = 9;
-bool LedState(int64_t* out, int64_t& age_ms);
 /// Ends the tick thread and the runtime (tests only: the app's process ends with _exit).
 void Stop();
 } // namespace Duo

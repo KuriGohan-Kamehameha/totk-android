@@ -715,6 +715,37 @@ static void emit(Ctx *c, Json *j, const char *status, unsigned long long seq, ui
     end_obj(j);
 }
 
+/* The values of a "ready" sample come from many separate reads. A sample taken while the game tore down or rebuilt its
+   state (title return, save load) shows up as a different manager, Int table, pouch partition or player actor
+   afterwards: 1 when a second look at these agrees with the first. Changes that keep all of them (an item picked up
+   mid-sample) only make individual fields one sample old or new. */
+static int settled(Ctx *c, uint64_t actor, int part_ok) {
+    Ctx d = {.rd = c->rd, .main = c->main};
+    uint64_t actor2; int part_ok2;
+    return !strcmp(gate(&d, &actor2, &part_ok2), "ready") && d.g == c->g && actor2 == actor && part_ok2 == part_ok &&
+           d.part == c->part && table(&d, T_INT) && c->t[T_INT].entries == d.t[T_INT].entries;
+}
+
+void companion_state(uintptr_t main_base, companion_read_fn rdf, CompanionState *out) {
+    pthread_once(&enum_once, enum_init);
+    for (int attempt = 0; attempt < 2; attempt++) {
+        companion_state_clear(out);
+        Ctx c = {.rd = rdf, .main = main_base};
+        uint64_t actor; int part_ok;
+        const char *status = gate(&c, &actor, &part_ok);
+        out->status = !strcmp(status, "ready") ? COMPANION_STATE_READY : !strcmp(status, "title") ? COMPANION_STATE_TITLE
+                    : !strcmp(status, "unsupported") ? COMPANION_STATE_UNSUPPORTED : COMPANION_STATE_STARTING;
+        if (out->status != COMPANION_STATE_READY) return;
+        int32_t life, max_life; int ok, pause_menu, aiming; const char *reason;
+        if (gd_int(&c, "PlayerStatus.Life", &life)) out->life = life;
+        if (gd_int(&c, "PlayerStatus.MaxLife", &max_life)) out->max_life = max_life;
+        companion_action_state(&ok, &reason, &pause_menu, &aiming);
+        out->in_game = 1; out->menu_open = pause_menu != 0;
+        if (settled(&c, actor, part_ok)) return;
+    }
+    companion_state_clear(out); out->status = COMPANION_STATE_TITLE;   /* moved twice: the transition, not mixed values */
+}
+
 size_t companion_snapshot(uintptr_t main_base, int detail, companion_read_fn rdf, CompanionBuf *out) {
     static _Atomic unsigned long long counter;
     pthread_once(&enum_once, enum_init);
@@ -727,14 +758,9 @@ size_t companion_snapshot(uintptr_t main_base, int detail, companion_read_fn rdf
         const char *status = gate(&c, &actor, &part_ok);
         emit(&c, &j, status, seq, actor, part_ok, detail);
         if (strcmp(status, "ready")) break;
-        /* The values come from many separate reads. A sample taken while the game tore down or rebuilt its state (title
-           return, save load) shows up as a different manager, Int table, pouch partition or player actor afterwards:
-           take the sample again, and if it moves again report the transition instead of mixed values. Changes that keep
-           all of these (an item picked up mid-sample) only make individual fields one sample old or new. */
-        Ctx d = {.rd = rdf, .main = main_base};
-        uint64_t actor2; int part_ok2;
-        if (!strcmp(gate(&d, &actor2, &part_ok2), "ready") && d.g == c.g && actor2 == actor && part_ok2 == part_ok &&
-            d.part == c.part && table(&d, T_INT) && c.t[T_INT].entries == d.t[T_INT].entries) break;
+        /* A sample that moved while it was taken (settled): take it again, and if it moves again report the transition
+           instead of mixed values. */
+        if (settled(&c, actor, part_ok)) break;
         if (attempt) { out->len = 0; out->failed = 0; Json t = {.b = out}; emit(&c, &t, "title", seq, 0, 0, detail); }
     }
     return out->failed ? 0 : out->len;

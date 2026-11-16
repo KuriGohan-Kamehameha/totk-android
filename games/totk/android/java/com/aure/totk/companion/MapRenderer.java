@@ -28,6 +28,12 @@ final class MapRenderer {
     MapRenderer(AssetStore assets, float density) { this.assets = assets; this.density = density; }
     void setUnit(float unit) { density = unit; }
     void recenter() { following = true; automaticLayer = true; }
+    /** Where the player is drawn (and followed) in the next draw, in place of the snapshot's last sample: the view glides
+     * the marker between two samples (Motion). heading NaN: the snapshot's. */
+    private boolean marked;
+    private double markedX, markedZ, markedHeading;
+    void marker(double x, double z, double heading) { marked = true; markedX = x; markedZ = z; markedHeading = heading; }
+    void noMarker() { marked = false; }
     void pan(float dx, float dy) {
         if (pixelsPerWorld <= 0) return;
         following = false;
@@ -49,7 +55,7 @@ final class MapRenderer {
         minZ = world.optDouble("minZ", -5000); maxZ = world.optDouble("maxZ", 5000);
         if (maxX <= minX || maxZ <= minZ) return;
         if (automaticLayer || mini) layer = data.player.optString("layer", "Ground");
-        double px = data.coordinate(0), pz = data.coordinate(2);
+        double px = marked ? markedX : data.coordinate(0), pz = marked ? markedZ : data.coordinate(2);
         if ((following || mini) && Double.isFinite(px) && Double.isFinite(pz)) { centerX = px; centerZ = pz; }
         cx = bounds.centerX(); cy = bounds.centerY();
         pixelsPerWorld = Math.min(bounds.width() / (float)(maxX - minX), bounds.height() / (float)(maxZ - minZ)) * (mini ? 9 : zoom);
@@ -90,7 +96,8 @@ final class MapRenderer {
         if (!mini) markers(canvas, assets.markers, false, true, bounds);
         if (Double.isFinite(px) && Double.isFinite(pz) && layer.equals(data.player.optString("layer", "Ground"))) {
             float sx = x(px), sy = y(pz), radius = (mini ? 9 : 11) * density;
-            canvas.save(); canvas.rotate((float)data.player.optDouble("heading", 0), sx, sy);
+            canvas.save();
+            canvas.rotate((float)(marked && !Double.isNaN(markedHeading) ? markedHeading : data.player.optDouble("heading", 0)), sx, sy);
             Bitmap player = assets.ui("map_player");
             if (player != null) {
                 tile.set(sx - radius, sy - radius, sx + radius, sy + radius);

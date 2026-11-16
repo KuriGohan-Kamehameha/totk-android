@@ -227,7 +227,7 @@ ifeq ($(TARGET)-$(APP)-$(VERSION),android-1-botw160)
 DUO := $(TOTK)/duo
 DUO_INPUTS := $(shell find $(DUO) -type f -not -path '*/packages/*' -not -name '*.md')
 all: $(OUT)/libduo_host.so
-$(OUT)/libduo_host.so: $(DUO_INPUTS)
+$(OUT)/libduo_host.so: $(DUO_INPUTS) $(TOTK)/runtime/companion_state.h
 	cmake -S $(DUO) -B $(OUT)/duo-build -DCMAKE_TOOLCHAIN_FILE=$(NDK)/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-$(API) -DANDROID_STL=c++_shared -DCMAKE_BUILD_TYPE=Release -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$(OUT) \
 	  "-DCMAKE_CXX_FLAGS=$(strip $(PREFIX_MAP)) -g"
 	cmake --build $(OUT)/duo-build -j$(DUO_JOBS) --target duo_host
@@ -591,7 +591,7 @@ $(OUT)/vkdraw-seed/.done: $(TOTK)/android/gfx/test_vkdraw_seed.py $(TOTK)/androi
 	python3 $< $(OUT)/vkdraw-seed && touch $@
 # The dual-screen companion's game-state reader and item actions against a fake 1.4.3 memory layout (no game files).
 companiontest: $(OUT)/companiontest
-$(OUT)/companiontest: $(TOTK)/tests/companion/test_companion.c $(TOTK)/runtime/companion_snapshot.c $(TOTK)/runtime/companion_actions.c $(TOTK)/runtime/companion.h
+$(OUT)/companiontest: $(TOTK)/tests/companion/test_companion.c $(TOTK)/runtime/companion_snapshot.c $(TOTK)/runtime/companion_actions.c $(TOTK)/runtime/companion.h $(TOTK)/runtime/companion_state.h
 	@mkdir -p $(dir $@)
 	$(CC) -O1 -g $(WARN) -D_GNU_SOURCE -DTOTK_GAME_V143=1 -I$(TOTK)/runtime -DCOMPANION_ACTIONS_TEST -fsanitize=address,undefined -o $@ \
 	  $(TOTK)/tests/companion/test_companion.c $(TOTK)/runtime/companion_snapshot.c $(TOTK)/runtime/companion_actions.c -lm $(if $(filter linux,$(TARGET)),-lpthread)

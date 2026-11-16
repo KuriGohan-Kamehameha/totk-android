@@ -136,7 +136,13 @@ class ManifestTests(unittest.TestCase):
                                  'android.permission.POST_NOTIFICATIONS', 'android.permission.WAKE_LOCK',
                                  'android.permission.MANAGE_EXTERNAL_STORAGE', 'android.permission.VIBRATE',
                                  'android.permission.INTERNET', 'android.permission.ACCESS_NETWORK_STATE',
-                                 'android.permission.REQUEST_INSTALL_PACKAGES']))
+                                 'android.permission.REQUEST_INSTALL_PACKAGES',
+                                 'com.moonbench.bifrost.permission.CONTROL_LEDS']))
+        # Only Bifrost is asked about, and <queries> is a child of <manifest> placed before <application>.
+        tags = [t for t, a in m['all']]
+        self.assertEqual([a[(A, 'name')][1] for t, a in m['all'] if t == 'package'], ['com.moonbench.bifrost'])
+        self.assertEqual(tags[tags.index('queries') + 1], 'package')
+        self.assertLess(tags.index('queries'), tags.index('application'))
         app = m['application']
         self.assertEqual(app[(A, 'label')], (3, 'TotK Native'))
         for name, value in (('hasCode', TRUE), ('debuggable', FALSE), ('extractNativeLibs', TRUE), ('allowBackup', FALSE),

@@ -39,7 +39,12 @@ PERMISSIONS = ('android.permission.FOREGROUND_SERVICE', 'android.permission.FORE
                'android.permission.POST_NOTIFICATIONS', 'android.permission.WAKE_LOCK',
                'android.permission.MANAGE_EXTERNAL_STORAGE', 'android.permission.VIBRATE',
                'android.permission.INTERNET', 'android.permission.ACCESS_NETWORK_STATE',
-               'android.permission.REQUEST_INSTALL_PACKAGES')
+               'android.permission.REQUEST_INSTALL_PACKAGES',
+               # Bifrost (the AYN Thor's stick-LED app) accepts LED commands from apps that hold its own normal-level
+               # permission; on a device without Bifrost the name is unknown and nothing is granted (BifrostBridge.java).
+               'com.moonbench.bifrost.permission.CONTROL_LEDS')
+# Packages the app asks the package manager about: only whether Bifrost is installed, so that nothing is sent without it.
+QUERIES = ('com.moonbench.bifrost',)
 
 # android.R.attr resource ids of the manifest attributes used here (checked against aapt2 link with android.jar)
 ATTR = {
@@ -103,6 +108,7 @@ def manifest_tree(package, label, version_code, version_name, min_sdk, target_sd
     return ('manifest', [(False, 'package', 'str', package), (A, 'versionCode', 'int', version_code), (A, 'versionName', 'str', version_name)], [
         ('uses-sdk', [(A, 'minSdkVersion', 'int', min_sdk), (A, 'targetSdkVersion', 'int', target_sdk)], []),
         *[('uses-permission', [(A, 'name', 'str', p)], []) for p in PERMISSIONS],
+        ('queries', [], [('package', [(A, 'name', 'str', q)], []) for q in QUERIES]),
         ('application', [(A, 'label', 'str', label), (A, 'hasCode', 'bool', True), (A, 'debuggable', 'bool', not release),
                          (A, 'extractNativeLibs', 'bool', True), (A, 'isGame', 'bool', True), (A, 'theme', 'ref', THEME_NOTITLEBAR_FULLSCREEN),
                          # Saves and setup state stay on the device: no cloud/adb backup of the app's private files, and

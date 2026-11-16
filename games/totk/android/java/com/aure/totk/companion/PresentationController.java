@@ -48,6 +48,8 @@ public final class PresentationController implements DisplayManager.DisplayListe
         if (focused) main.post(coverRefresh);
     };
     private boolean closed, stopped, resumed, topResumed, returnQueued, returnRequested, reported, reportQueued;
+    /** Also told of a touch on the second screen (UI thread): the stick-LED bridge, when there is one. */
+    public static volatile Runnable touchListener;
     private ActivityManager.AppTask inputTask;
     private long returnRequestedAt;
     private int rapidAutoReturns;
@@ -338,7 +340,11 @@ public final class PresentationController implements DisplayManager.DisplayListe
             private boolean touching;
             @Override public boolean dispatchTouchEvent(MotionEvent event) {
                 int action = event.getActionMasked();
-                if (action == MotionEvent.ACTION_DOWN) { touching = true; touchInProgress = true; resetAutoReturn(); }
+                if (action == MotionEvent.ACTION_DOWN) {
+                    touching = true; touchInProgress = true; resetAutoReturn();
+                    Runnable listener = touchListener;
+                    if (listener != null) listener.run();
+                }
                 boolean handled = super.dispatchTouchEvent(event);
                 if (action == MotionEvent.ACTION_CANCEL) {
                     touching = false; touchInProgress = false;

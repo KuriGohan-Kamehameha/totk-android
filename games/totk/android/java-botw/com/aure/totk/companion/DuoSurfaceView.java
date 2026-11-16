@@ -39,6 +39,16 @@ public final class DuoSurfaceView extends SurfaceView implements SurfaceHolder.C
     private static native void nativeSurface(Surface surface, int width, int height);
     /** The pointers now down, in view pixels; count 0 when all are lifted. */
     private static native void nativeTouch(int[] ids, float[] xs, float[] ys, int count);
+    /** What the title module published last, for the stick LEDs (BifrostState): out[0..8] in duo_host.cpp's LedNames
+     *  order, out[9] the age of that sample in milliseconds. False before the first sample. */
+    private static native boolean nativeLedState(long[] out);
+    private static volatile boolean ledState = true;
+    /** Any thread. False when there is nothing to read: no library, an older library, or no sample yet. */
+    public static boolean gameState(long[] out) {
+        if (!loaded || !ledState) return false;
+        try { return nativeLedState(out); }
+        catch (UnsatisfiedLinkError older) { ledState = false; return false; }
+    }
 
     public DuoSurfaceView(Context context) {
         super(context);

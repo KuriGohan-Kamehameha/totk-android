@@ -164,6 +164,13 @@ final class GameFeedback {
     void close() {}
     void rumble(int left, int right) {}
 }''',
+    'com/aure/totk/BifrostBridge.java': '''package com.aure.totk;
+final class BifrostBridge {
+    static BifrostBridge create(Object activity) { return null; }   // the probe's device has no Bifrost
+    void start() {}
+    void stop() {}
+    void close() {}
+}''',
     'com/aure/totk/TextEntry.java': '''package com.aure.totk;
 final class TextEntry {
     interface Answer { void done(String text); }

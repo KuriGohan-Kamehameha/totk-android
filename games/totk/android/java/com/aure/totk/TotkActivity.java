@@ -37,8 +37,10 @@ public final class TotkActivity extends NativeActivity {
         updateOpen = true;
         // Explicitly pause on both single- and dual-screen devices, independent of window focus.
         nativeGameFocus(false, true);
+        if (bifrost != null) bifrost.stop();
         com.aure.totk.setup.UpdatePrompt.show(this, version, now -> {
             updateOpen = false;
+            if (bifrost != null && resumed) bifrost.start();
             if (now) {
                 try {
                     startActivity(new Intent().setClassName(this, "com.aure.totk.setup.UpdateEntryActivity")
@@ -75,6 +77,8 @@ public final class TotkActivity extends NativeActivity {
 
     /** The game's rumble and six-axis sensor (runtime/feedback_android.c); null when the game was given neither. */
     private volatile GameFeedback feedback;
+    /** The stick LEDs follow the game through Bifrost, when that app is installed (null: TOTK_BIFROST=0). */
+    private BifrostBridge bifrost;
     private boolean resumed;
     static native void nativeMotion(float ax, float ay, float az, float gx, float gy, float gz);
     static native void nativeMotionLive(boolean on, String source);
@@ -152,6 +156,7 @@ public final class TotkActivity extends NativeActivity {
         saves = SaveMirror.Watcher.start(this);
         int given = nativeFeedbackEnabled();   // what start_game gave the game (TOTK_RUMBLE / TOTK_GYRO and the hardware)
         if (given != 0 && !isFinishing()) feedback = new GameFeedback(this, given);
+        if (!isFinishing()) bifrost = BifrostBridge.create(this);
         if (!updateChecked) {
             updateChecked = true;
             Updates.check(this, version -> { updateVersion = version; showUpdate(); });
@@ -194,6 +199,7 @@ public final class TotkActivity extends NativeActivity {
         ensureMainDisplay();
         GameFeedback f = feedback;
         if (f != null) f.resume();
+        if (bifrost != null) bifrost.start();
         showUpdate();
     }
     @Override public void onTopResumedActivityChanged(boolean top) {
@@ -213,16 +219,22 @@ public final class TotkActivity extends NativeActivity {
             if (focused && resumed) f.resume();
             else f.pause();
         }
+        if (single && bifrost != null) {   // one display: focus loss pauses the game, so the LEDs go back too
+            if (focused && resumed && !updateOpen) bifrost.start();
+            else bifrost.stop();
+        }
     }
     @Override protected void onPause() {
         resumed = false;
         GameFeedback f = feedback;
         if (f != null) f.pause();   // no motion in the background, and no motor left running
+        if (bifrost != null) bifrost.stop();   // the LEDs never stay on the game's effect
         super.onPause();
     }
     @Override protected void onStop() {
         // Leaving the foreground may be the last chance before the process is killed: push a save made just now.
         if (saves != null) saves.flush();
+        if (bifrost != null) bifrost.stop();
         super.onStop();
     }
     @Override protected void onDestroy() {
@@ -230,6 +242,7 @@ public final class TotkActivity extends NativeActivity {
         if (companion != null) { companion.close(); companion = null; }
         if (saves != null) { saves.close(1500); saves = null; }
         if (feedback != null) { feedback.close(); feedback = null; }
+        if (bifrost != null) { bifrost.close(); bifrost = null; }
         // Native onDestroy exits the process, so all Java teardown must precede this call.
         super.onDestroy();
     }

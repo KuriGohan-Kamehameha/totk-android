@@ -88,3 +88,31 @@ On a Retroid Pocket Duo with the imported game on internal storage, preparing th
 On dual-screen devices, old-but-present art is updated automatically when Home opens, as before; **Play now** can stop
 the update and use the old art. On single-screen devices there is no automatic art update or rebuild reminder.
 
+
+## Stick LEDs (AYN Thor, Bifrost)
+
+When [Bifrost](https://github.com/Pollux-MoonBench/Bifrost) is installed, the game app tells it what the stick rings
+show while the game is in the foreground, the way Bifrost's Fallout 4 Pip-Boy plugin is fed: one `PIPBOY` effect in the
+tablet's colour, re-sent every half second (Bifrost drops an override that is silent for 1.5 s), a dip when the second
+screen is touched or the pause menu opens or closes, a short scramble when a save has loaded, a red stutter while
+hearts are low, and a dip on a hit. Leaving the game (pause, another app, the launcher menu) hands the rings back at
+once. Without Bifrost nothing runs: no thread, no read of the game, no broadcast.
+
+| | Tears of the Kingdom | Breath of the Wild |
+|---|---|---|
+| In game | teal `#00ffc3` | blue `#00c4ff`; orange `#ff7b00` before the Sheikah Slate |
+| Pause menu open | lime `#d4ea74` | light blue `#a6ebff`; `#ffb870` before the slate |
+| Low hearts (at or under one heart or a quarter of the maximum; ends one heart above) | red `#ff1100`, stutter | the same |
+| Title, loading, no state | nothing sent | nothing sent |
+
+The state comes from what the second screen already reads: the companion snapshot in Tears of the Kingdom (so only
+with the companion on), the Eden Duo module's published values in Breath of the Wild (`duo/duo_host.cpp` `LedNames`).
+The table and the timing are in `android/java/com/aure/totk/BifrostLooks.java`; `tests/test_android_bifrost.py` runs
+them against Bifrost's own validator and rate limiter rules.
+
+In Bifrost: start its LED service and turn on **Allow third-party LED control**. Installing the game's plugin from
+Bifrost's Plugin Store adds the brightness policy (30 % cap, scaled by the bottom screen's brightness) and a preset in
+the game's colour for the moments the game sends nothing.
+
+`totk.env`: `TOTK_BIFROST=0` turns the bridge off; `TOTK_BIFROST=2` uses Bifrost's public effects (breath, static,
+pulse) instead of the Pip-Boy feed. There is no row for it in the launcher menu.

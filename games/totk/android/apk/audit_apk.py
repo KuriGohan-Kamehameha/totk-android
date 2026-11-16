@@ -4,7 +4,10 @@ native libraries, our fonts and licence texts, the identifier-only pipeline key 
 the game (images, text, fonts, shaders, tables, rewritten code, companion art, the old Control-NCA launcher icon) or like
 key material. build_release.py runs it on every APK it makes and stops on any finding.
 
-    audit_apk.py <apk> [<apk> ...]           exit 1 and one line per finding when something is wrong
+    audit_apk.py [--game botw160] <apk> [<apk> ...]   exit 1 and one line per finding when something is wrong
+
+--game botw160 (build_release.py --game botw160 passes it) also admits the Eden Duo companion host and its package, which
+only the Breath of the Wild build carries; the default audits a Tears of the Kingdom APK, where they are findings.
 """
 import re, sys, zipfile
 from pathlib import Path
@@ -34,6 +37,17 @@ ALLOWED = [re.compile(p) for p in (
     r'assets/build\.txt',         # the source commit shown in About (build_release.stage_assets)
     r'assets/licenses/[A-Za-z0-9][A-Za-z0-9_.+-]*\.txt',
 )]
+# Breath of the Wild builds only (audit(game='botw160'), audit_apk.py --game botw160): the Eden Duo companion host and its
+# package, both vendored in games/totk/duo/vendor (GPL-3.0-or-later; assets/licenses/Eden-Duo.txt). The package is pages
+# and code-drawn images, no game art, and every entry must be byte for byte the vendored file.
+DUO_LIB = 'libduo_host.so'
+DUO_PACKAGE = Path(__file__).resolve().parents[2] / 'duo/vendor/companions/packages/BreathOfTheWild/dualscreen'
+DUO_ASSETS = 'assets/duo/BreathOfTheWild/dualscreen/'
+ALLOWED_BOTW = [re.compile(p) for p in (
+    r'lib/arm64-v8a/' + re.escape(DUO_LIB),
+    re.escape(DUO_ASSETS) + r'(manifest|ASSETS\.provenance|[0-9A-F]{16})\.json',
+    re.escape(DUO_ASSETS) + r'assets/[A-Za-z0-9][A-Za-z0-9_.-]*\.png',
+)]
 # Names and extensions of the game's own files and of what the build or the device setup derives from them.
 DENIED_SUFFIXES = ('.bntx', '.bfttf', '.bfotf', '.zs', '.sarc', '.pack', '.msbt', '.msbp', '.bfres', '.byml', '.bgyml',
                    '.spv', '.vk', '.vv', '.vkpack', '.nso', '.nca', '.nsp', '.xci', '.nsz', '.npdm', '.keys', '.jpg', '.dat',
@@ -52,10 +66,12 @@ ELF_MAGIC = b'\x7fELF'
 HOST_PATH = re.compile(rb'/(home|Users)/[A-Za-z0-9_.-]+/')
 
 
-def audit(apk):
-    """Findings for one APK (empty when it passes)."""
+def audit(apk, game='v143'):
+    """Findings for one APK (empty when it passes). game: the build it claims to be; only 'botw160' may carry the Eden
+    Duo companion (ALLOWED_BOTW)."""
     import hashlib
     problems = []
+    allowed = ALLOWED + (ALLOWED_BOTW if game == 'botw160' else [])
     with zipfile.ZipFile(apk) as z:
         names = z.namelist()
         if len(set(names)) != len(names):
@@ -65,7 +81,7 @@ def audit(apk):
             lower = name.lower()
             if name.endswith('/') or '..' in path.parts or name.startswith('/'):
                 problems.append(f'{name}: not a plain file entry'); continue
-            if not any(p.fullmatch(name) for p in ALLOWED):
+            if not any(p.fullmatch(name) for p in allowed):
                 problems.append(f'{name}: not on the allowlist')
             if lower.endswith(DENIED_SUFFIXES) or path.name.lower() in DENIED_NAMES or '.patched' in lower:
                 problems.append(f'{name}: name of game data or of data derived from it')
@@ -87,6 +103,10 @@ def audit(apk):
                 problems.append(f'{name}: starts like a game file ({data[:8]!r})')
             if name == 'assets/shader_list.tsv' and SHADER_LIST.is_file() and data != SHADER_LIST.read_bytes():
                 problems.append(f'{name}: differs from the committed games/totk/assets/shader_list.tsv')
+            if name.startswith(DUO_ASSETS):
+                source = DUO_PACKAGE / name[len(DUO_ASSETS):]
+                if not source.is_file() or source.read_bytes() != data:
+                    problems.append(f'{name}: differs from the vendored companion package ({source})')
             if name == 'assets/build.txt' and not re.fullmatch(rb'commit [0-9a-f]{7,40}(-dirty)?\n', data):
                 problems.append(f'{name}: not one "commit <hash>" line')
             if lower.endswith(('.ttf', '.otf')) and not data.startswith(FONT_MAGIC):
@@ -108,9 +128,12 @@ def audit(apk):
 def main(argv):
     if not argv:
         sys.exit(__doc__)
+    game = 'v143'
+    if argv[0] == '--game':
+        game, argv = argv[1], argv[2:]
     failed = False
     for apk in argv:
-        problems = audit(apk)
+        problems = audit(apk, game)
         for p in problems:
             print(f'{apk}: {p}')
         failed |= bool(problems)

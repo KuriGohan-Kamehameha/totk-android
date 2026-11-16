@@ -1,0 +1,9 @@
+{
+    global:
+        duo_host_start;
+        duo_host_frame;
+        Java_com_aure_totk_companion_DuoSurfaceView_nativeSurface;
+        Java_com_aure_totk_companion_DuoSurfaceView_nativeTouch;
+    local:
+        *;
+};

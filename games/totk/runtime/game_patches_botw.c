@@ -5,6 +5,7 @@
 #include <string.h>
 #include "game_patches.h"
 #include "game_version.h"
+#include "duo_link.h"
 
 /* ---- The real-time frame step, from MacNativeGames games/totk/runtime/game_patches_botw.c (MIT, commit 49ff9ec),
    lines 59-449: the 1.6.0 sites, checked word by word before they are replaced. Host differences only: the clock, no
@@ -154,6 +155,7 @@ static void pad_tick_advance(void) {
     }
 }
 void runtime_frame_step_update(uint64_t now_ns) {
+    runtime_duo_frame();   /* the second-screen companion ticks with the game's frames (duo_port.c); never blocks */
     if (!frame_step_data || !now_ns) return;
     frame_step_measure(now_ns);
     if (pad_tick) pad_tick_advance();
@@ -434,6 +436,7 @@ static unsigned excl_acquire(uint8_t *code, size_t n) {
 }
 void runtime_game_patches(Module *m) {
     fprintf(stderr, "[botw] %s game-code patches\n", TOTK_GAME_VERSION);
+    runtime_duo_main(m);   /* the companion reads main where it is mapped; it patches nothing */
     if (realtime_enabled()) patch_realtime(m);
     else fprintf(stderr, "[botw] real-time frame step off (TOTK_REALTIME=0): the game advances by its present interval\n");
     const char *a = getenv("TOTK_EXCL_ACQUIRE");

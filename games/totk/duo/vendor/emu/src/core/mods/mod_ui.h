@@ -1,0 +1,798 @@
+// SPDX-FileCopyrightText: Copyright 2026 Eden DSMod fork
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// Second-screen widget renderer. Pages of widgets rasterise into a CPU canvas that is uploaded
+// once per change; with an AuxDrawList the map widget instead emits GPU quads (map texture, atlas
+// icons, markers) and the canvas carries only the HUD overlay. Either way every mod-facing
+// concept (pages, widgets, binds) stays out of the renderer.
+
+#pragma once
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <cmath>
+#include <cstddef>
+#include <functional>
+#include <list>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <span>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+
+#include "common/common_types.h"
+#include "core/mods/mod_types.h"
+#include "video_core/dsmod/aux_routing.h"
+
+namespace Core::Mods {
+
+class FontPages;
+
+/// A decoded picture, in the canvas' own pixel order.
+struct Image {
+    u32 w{};
+    u32 h{};
+    std::vector<u32> pixels;
+    [[nodiscard]] bool Valid() const {
+        return w != 0 && h != 0 && !pixels.empty();
+    }
+};
+
+/// Resolves a widget's "src" to a decoded image, or nullptr when it cannot be loaded. The runtime
+/// owns the cache; the renderer only borrows -- but "borrows" now means holding a ref-counted
+/// shared_ptr, not a raw pointer into the runtime's own map (a raw pointer into the cache could
+/// dangle if the runtime's own eviction/insert races the caller once the caller is a different
+/// thread; a shared_ptr keeps the Image alive for exactly as long as the caller holds this return
+/// value, regardless of what the cache does meanwhile).
+using ImageProvider = std::function<std::shared_ptr<const Image>(const std::string& src)>;
+/// Resolves a text reference ("msbt:<alias>#<label>") to its decoded text, or nullptr while it is
+/// not available (yet). The runtime owns the strings; the renderer only borrows -- but "borrows"
+/// now means holding a ref-counted shared_ptr (aliased onto the msbt bucket's own label-map
+/// shared_ptr), not a raw pointer into it (the same hazard as ImageProvider's: a re-landed alias's
+/// shared_ptr reassignment can free a raw pointer into the map out from under the caller once the
+/// caller is a different thread -- fixed the same way ImageProvider is).
+using TextProvider = std::function<std::shared_ptr<const std::string>(const std::string& ref)>;
+using MapFollowState = std::map<std::string, std::array<float, 2>>;
+
+/// Per-Image-widget-instance draw continuity, kept across redraw passes. `GetModuleImage` /
+/// `CacheFindImage` return nullptr on a cache miss while a decode is pending, not a drawable
+/// "no picture" state -- a module that mints a fresh source key every time it has something new
+/// to show (a live-rendered frame named by revision) would otherwise flicker blank on every key,
+/// at whatever rate it mints them. `image`/`source_key` are the picture and key last actually
+/// resolved for this widget, kept alive here past whatever the runtime's own image_cache evicts;
+/// a pending decode draws `image` again instead of nothing. `fade_from` is only non-null while an
+/// Image widget's optional "src_fade_ms" cross-fade (into `image`, from `fade_from`) is in
+/// flight; `fade_bind_value` is "src_fade_bind"'s value recorded at the swap that started the
+/// fade currently showing (or the last instant swap), so the next swap can tell whether that bind
+/// actually changed.
+struct ImageFallbackEntry {
+    std::string source_key;
+    std::shared_ptr<const Image> image;
+    std::shared_ptr<const Image> fade_from;
+    std::chrono::steady_clock::time_point fade_start{};
+    std::string fade_bind_value;
+};
+/// One `ImageFallbackEntry` per fallback slot, in one shared map keyed by whichever reader/writer
+/// owns that slot: DrawImage's own stable key (page id + widget id/index, the same convention the
+/// pan_zoom view lookup in RenderPage uses, plus src_bind) for an Image widget instance, or
+/// GeometryMapDraw::DrawOverlays' key (the Map widget's own page id + widget id/index, plus an
+/// overlay index and "src"/"mask") for a Map widget's overlay picture / replacement mask
+/// (mod_ui_map_widget.cpp) -- no cross-fade there, just the held image. One instance lives on the
+/// ModRuntime (`image_fallback_state`); RenderPage only borrows a pointer to it, like
+/// `follow_state`. Its own mutex, not `asset_cache_mutex`: a fallback hit never touches
+/// `image_cache`, and its writers/readers (DrawImage, DrawOverlays) only ever run one at a time
+/// for a given RenderPage call, on whichever thread runs it (the redraw worker, or the tick
+/// thread's synchronous carve-outs for a page transition / EDEN_DSMOD_SYNC_REDRAW -- the same two
+/// callers every other per-widget RenderPage state already has to allow for). Cleared wholesale
+/// by ShutdownGameModule, so nothing leaks across a title change or a package reload.
+struct ImageFallbackState {
+    std::unordered_map<std::string, ImageFallbackEntry> entries;
+    std::mutex mutex;
+    /// Set by DrawImage while any cross-fade is still in flight. The redraw worker's `animating`
+    /// signal only re-arms Map widgets (glide_owed), so PublishUi consumes this to schedule the
+    /// repaint that carries the fade to its end; otherwise a fade freezes on its first frame (the
+    /// outgoing picture) until something else redraws the page.
+    std::atomic<bool> fade_in_flight{false};
+};
+/// Called with the area the map is drawing and the player's world position in it, so the runtime
+/// can record fog-of-war reveal against exactly the area shown (not a guessed one).
+using VisitReporter = std::function<void(const std::string& area, float wx, float wy)>;
+/// Whether a world position in an area has been revealed yet -- gates icon drawing so unexplored
+/// features stay hidden with the geometry.
+using VisitedQuery = std::function<bool(const std::string& area, float wx, float wy)>;
+
+class Canvas {
+public:
+    void Resize(u32 width, u32 height);
+    void Clear(u32 argb);
+    void FillRect(s32 x, s32 y, s32 w, s32 h, u32 argb);
+    /// Sets every pixel of the rect to `argb` (no blending): a hole in a composited overlay.
+    void ClearRect(s32 x, s32 y, s32 w, s32 h, u32 argb = 0);
+    /// A capsule (pill): `fill` inside, a `thickness`-px `frame` ring along the edge.
+    void Pill(s32 x, s32 y, s32 w, s32 h, s32 thickness, u32 fill, u32 frame);
+    void FrameRect(s32 x, s32 y, s32 w, s32 h, s32 thickness, u32 argb);
+    void DrawText(s32 x, s32 y, std::string_view text, s32 scale, u32 argb);
+    /// Width DrawText would cover, in the current font (or the built-in one), so a caller can
+    /// centre or right-align.
+    [[nodiscard]] s32 MeasureText(std::string_view text, s32 scale) const;
+    /// DrawText anchored: align 0 = x is the left edge, 1 = x is the centre, 2 = the right edge.
+    void DrawTextAligned(s32 x, s32 y, std::string_view text, s32 scale, u32 argb, s32 align);
+    /// Splits text into lines: at every '\n', and (wrap_width > 0) greedily on spaces so each line
+    /// fits, breaking a word by character only when it cannot fit a line alone. With max_lines > 0
+    /// the last kept line ends in an ellipsis, trimmed to fit.
+    [[nodiscard]] std::vector<std::string> LayoutText(std::string_view text, s32 scale,
+                                                      s32 wrap_width, s32 max_lines) const;
+    /// LayoutText without the copy: a reference into the canvas' layout cache, valid until the
+    /// next LayoutText / LayoutLines / SetFont / SetIconFont call on this canvas.
+    [[nodiscard]] const std::vector<std::string>& LayoutLines(std::string_view text, s32 scale,
+                                                             s32 wrap_width, s32 max_lines) const;
+    /// Multi-line DrawTextAligned: line i's cap top is y + i * (scale * 5 + line_gap), each line
+    /// aligned on its own (line_gap < 0 = scale * 3).
+    void DrawTextBlock(s32 x, s32 y, std::string_view text, s32 scale, u32 argb, s32 align,
+                       s32 wrap_width, s32 max_lines, s32 line_gap);
+    /// Inline icons (TextIconBase + code point) come from this second font, drawn untinted at the
+    /// text's size. `pending`: the font is still loading (icons keep their space, drawn blank);
+    /// with no font and not pending an icon is written as "(X)".
+    void SetIconFont(const Image* atlas, const FontMetrics* metrics, bool pending) {
+        icon_atlas = atlas;
+        icon_metrics = metrics;
+        icon_pending = pending;
+        layout.fonts_changed = true;
+    }
+    /// Draw inline icons as a mask in the text colour (a shadow copy of a label).
+    void SetIconSilhouette(bool on) {
+        icon_silhouette = on;
+    }
+    /// Colour tags in the text: "{c:#AARRGGBB}" starts a span, "{/c}" returns to the draw colour.
+    /// Tags take no width and never draw; a malformed one is plain text. Off = braces are text.
+    void SetColorMarkup(bool on) {
+        color_markup = on;
+    }
+    [[nodiscard]] bool ColorMarkup() const {
+        return color_markup;
+    }
+    /// An outline / shadow copy of a label: colour tags are still read (same layout as the main
+    /// copy) but every span draws in the draw colour.
+    void SetOutlineCopy(bool on) {
+        outline_copy = on;
+    }
+    /// Draw with the game's own font instead of the built-in one. The atlas holds coverage in
+    /// alpha, so the glyph is a mask and the colour comes from the caller -- which is what lets
+    /// one font serve every label on the page.
+    void SetFont(const Image* atlas, const FontMetrics* metrics) {
+        font_atlas = atlas;
+        font_metrics = metrics;
+        layout.fonts_changed = true;
+    }
+    /// Outline ring and per-glyph rise for the next DrawText calls (game font only); callers
+    /// reset them to (0, 0, 0) after the widget.
+    void SetTextEffects(u32 outline_argb, s32 outline_px, float rise) {
+        text_outline = outline_argb;
+        text_outline_px = outline_px;
+        text_rise = rise;
+    }
+    /// Forward lean for the next DrawText calls, in degrees (Widget::text_slant): each glyph
+    /// scanline is shifted right by (baseline - row) * tan(slant), so the baseline stays put and
+    /// descenders lean back. Both fonts; inline icons stay upright. 0 = upright.
+    void SetTextSlant(float degrees) {
+        text_slant_tan = degrees != 0.0f ? std::tan(degrees * 0.017453292f) : 0.0f;
+    }
+    /// Runtime 17: the pages of a paged font (FontMetrics::page_h > 0), loaded on demand; a
+    /// glyph whose page is not resident yet draws blank (TakeGlyphsPending turns true).
+    void SetFontPages(FontPages* pages) {
+        font_pages = pages;
+    }
+    /// Whether a glyph was skipped since the last call because its font page was still loading.
+    bool TakeGlyphsPending() {
+        const bool pending = glyphs_pending;
+        glyphs_pending = false;
+        return pending;
+    }
+    [[nodiscard]] bool HasFont() const {
+        return font_metrics != nullptr &&
+               (font_atlas != nullptr || (font_pages != nullptr && font_metrics->page_h > 0));
+    }
+    /// The font DrawText uses (nullptr = the built-in one).
+    [[nodiscard]] const FontMetrics* ActiveFont() const {
+        return HasFont() ? font_metrics : nullptr;
+    }
+    /// The loaded font's glyph for a codepoint, or for its plain stand-in (’ -> ', é -> e) when
+    /// the font lacks it; nullptr when neither exists.
+    [[nodiscard]] const FontGlyph* FindGlyph(char32_t c) const;
+    /// Scales the image into the rect (nearest neighbour) and alpha-blends it. A tint other than
+    /// opaque white multiplies the image, so one asset can be recoloured per widget.
+    void DrawImage(s32 x, s32 y, s32 w, s32 h, const Image& image, u32 tint);
+    /// Flat-filled triangle. A game whose map is geometry rather than tiles needs this to draw
+    /// its own map at all.
+    void FillTriangle(s32 x0, s32 y0, s32 x1, s32 y1, s32 x2, s32 y2, u32 argb);
+    /// Blits one cell out of a sprite atlas, so icons can come from the game's own sheet.
+    void DrawImageRegion(s32 x, s32 y, s32 w, s32 h, const Image& image, s32 sx, s32 sy, s32 sw,
+                         s32 sh, u32 tint, bool flip_x = false, bool flip_y = false);
+    /// DrawImageRegion that keeps only the image's alpha: the shape is filled with `argb` (its
+    /// alpha multiplies the shape's).
+    void DrawImageMask(s32 x, s32 y, s32 w, s32 h, const Image& image, s32 sx, s32 sy, s32 sw,
+                       s32 sh, u32 argb);
+    /// DrawImageRegion turned by `angle_rad` about the rect's centre (a loading wheel); nearest
+    /// sampling, clockwise for positive angles on the panel's y-down axes.
+    /// DrawImageTransformed's exact-quarter-turn path (90 / 180 / 270 degrees at scale 1): axis
+    /// swap / mirror through two integer tables, the same texels as the generic inverse map.
+    void DrawImageQuarterTurned(s32 x, s32 y, s32 w, s32 h, const Image& image, s32 sx, s32 sy,
+                                s32 sw, s32 sh, u32 tint, float deg, float pivot_x, float pivot_y,
+                                bool flip_x, bool flip_y);
+    void DrawImageRegionRotated(s32 x, s32 y, s32 w, s32 h, const Image& image, s32 sx, s32 sy,
+                                s32 sw, s32 sh, u32 tint, float angle_rad);
+    /// Runtime 16: the region drawn into {x, y, w, h}, then scaled by `scale` and turned by
+    /// `degrees` (+ = clockwise) about (x + pivot_x, y + pivot_y). Nearest sampling; an unturned
+    /// draw is DrawImageRegion of the scaled rect. Stays inside TransformedImageBounds.
+    void DrawImageTransformed(s32 x, s32 y, s32 w, s32 h, const Image& image, s32 sx, s32 sy, s32 sw,
+                              s32 sh, u32 tint, float degrees, float scale, float pivot_x,
+                              float pivot_y, bool flip_x = false, bool flip_y = false);
+    /// Runtime 22: DrawImageTransformed at scale 1 for big pictures (a turned map's base and
+    /// tiles): the source position is stepped along each row in 32.32 fixed point instead of
+    /// recomputed and divided per pixel, and only the row span inside the rect is visited. Up to
+    /// one texel / one edge pixel may differ from DrawImageTransformed; opaque texels are stored.
+    void DrawImageTurned(s32 x, s32 y, s32 w, s32 h, const Image& image, s32 sx, s32 sy, s32 sw,
+                         s32 sh, u32 tint, float degrees, float pivot_x, float pivot_y);
+    /// Draws only the bottom `fraction` of the image (or of one atlas cell), so a sprite can act
+    /// as a gauge. The tint's alpha multiplies the image like DrawImageRegion.
+    void DrawImageFilled(s32 x, s32 y, s32 w, s32 h, const Image& image, u32 tint, float fraction,
+                         s32 sx = 0, s32 sy = 0, s32 sw = 0, s32 sh = 0);
+
+    [[nodiscard]] u32 Width() const {
+        return w;
+    }
+    const Image* font_atlas{nullptr};
+    const FontMetrics* font_metrics{nullptr};
+    FontPages* font_pages{nullptr};
+    u32 text_outline{0};
+    s32 text_outline_px{0};
+    float text_rise{0.0f};
+    float text_slant_tan{0.0f};
+    /// DrawImageRegion / DrawImageMask of a glyph, one scanline at a time when the text leans
+    /// (text_slant_tan != 0), each shifted by its distance above `baseline`; one blit otherwise.
+    void BlitGlyph(s32 x, s32 y, s32 w, s32 h, const Image& atlas, s32 sx, s32 sy, s32 sw, s32 sh,
+                   u32 argb, f32 baseline, bool mask);
+    [[nodiscard]] u32 Height() const {
+        return h;
+    }
+    [[nodiscard]] const std::vector<u32>& Pixels() const {
+        return pixels;
+    }
+
+    /// Multiply the alpha of subsequent drawing operations. Used while painting one map widget so
+    /// the CPU path has the same per-layer opacity as the GPU quad compositor.
+    void SetDrawOpacity(float opacity) {
+        draw_opacity = std::clamp(opacity, 0.0f, 1.0f);
+    }
+    /// A second alpha multiplier on top of SetDrawOpacity (a fading widget group), so widgets that
+    /// set their own draw opacity still fade with their group.
+    void SetLayerOpacity(float opacity) {
+        layer_opacity = std::clamp(opacity, 0.0f, 1.0f);
+    }
+    /// Restricts every drawing operation, Clear() included, to a rectangle (intersected with the
+    /// canvas); w or h <= 0 means the whole canvas. An animation redraws only its own box this way.
+    void SetClip(s32 x, s32 y, s32 cw, s32 ch);
+    void ResetClip() {
+        clip_x0 = clip_y0 = 0;
+        clip_x1 = static_cast<s32>(w);
+        clip_y1 = static_cast<s32>(h);
+    }
+    /// The current clip as {x, y, w, h}.
+    [[nodiscard]] std::array<s32, 4> Clip() const {
+        return {clip_x0, clip_y0, clip_x1 - clip_x0, clip_y1 - clip_y0};
+    }
+
+private:
+    [[nodiscard]] u32 ApplyDrawOpacity(u32 argb) const;
+    /// Pixel size of the text's ascent (cell top to baseline) at a cap height of `cap` px.
+    [[nodiscard]] f32 TextAscentPx(f32 cap) const;
+    /// Pen advance of an inline icon (glyph = the icon font's code point) at cap height `cap`.
+    [[nodiscard]] f32 IconAdvance(char32_t glyph, f32 cap, s32 scale) const;
+    /// Draws an inline icon with its baseline at `baseline`; returns the advance.
+    f32 DrawIcon(f32 pen, f32 baseline, char32_t glyph, f32 cap, s32 scale, u32 argb);
+    [[nodiscard]] bool IconDrawable(char32_t glyph) const;
+    const Image* icon_atlas{nullptr};
+    const FontMetrics* icon_metrics{nullptr};
+    bool icon_pending{false};
+    bool icon_silhouette{false};
+    bool color_markup{false};
+    bool outline_copy{false};
+    bool glyphs_pending{false};
+    /// Text layout cache (LayoutLines): least-recently-used, keyed by a hash of the text, the
+    /// layout parameters and the fonts' content (not their addresses: a font can be reassigned
+    /// in place, and a freed one's address reused). The key is kept whole to rule out collisions.
+    struct LayoutEntry {
+        u64 hash{};
+        std::string text;
+        s32 scale{}, wrap{}, lines{};
+        u64 fonts{};
+        bool markup{};
+        std::vector<std::string> out;
+    };
+    static constexpr size_t LayoutCacheSize = 512;
+    struct LayoutCache {
+        std::list<LayoutEntry> lru; ///< most recently used first
+        std::unordered_map<u64, std::list<LayoutEntry>::iterator> index;
+        /// Content hash of the text font and the icon font as layout sees them, recomputed on
+        /// the first layout after SetFont / SetIconFont; a new value empties the cache.
+        u64 fonts{};
+        bool fonts_changed{true};
+        LayoutCache() = default;
+        // `index` points into `lru`: a copied canvas starts with an empty cache of its own.
+        LayoutCache(const LayoutCache&) {}
+        LayoutCache& operator=(const LayoutCache& other) {
+            if (this != &other) {
+                lru.clear();
+                index.clear();
+                fonts_changed = true;
+            }
+            return *this;
+        }
+        LayoutCache(LayoutCache&&) = default;
+        LayoutCache& operator=(LayoutCache&&) = default;
+    };
+    mutable LayoutCache layout;
+    [[nodiscard]] u64 FontsFingerprint() const;
+    [[nodiscard]] float EffectiveOpacity() const {
+        return draw_opacity * layer_opacity;
+    }
+    std::vector<u32> pixels;
+    u32 w{0};
+    u32 h{0};
+    float draw_opacity{1.0f};
+    float layer_opacity{1.0f};
+    s32 clip_x0{0}, clip_y0{0}, clip_x1{0}, clip_y1{0}; ///< drawable area, [x0, x1) x [y0, y1)
+};
+
+/// GPU-composite output. When RenderPage receives a non-null AuxDrawList, the Map widget appends
+/// textured quads here (map endpoints, icon atlas, player marker) instead of blitting them into the
+/// canvas, and records the GetImage keys for the two source textures. The canvas then holds only
+/// the HUD overlay on a transparent background, and the renderer composites map + icons + marker +
+/// HUD on the GPU -- so a panning map / moving marker costs a few quad draws, not a ~5 MB
+/// re-upload. Null => the canvas is the whole bottom screen, exactly as before.
+struct AuxDrawList {
+    std::vector<VideoCore::DSMod::AuxRouting::Quad> quads;
+    std::string map_key;   ///< GetImage key for the map-area texture (compositor slot 0)
+    std::string atlas_key; ///< GetImage key for the icon atlas (compositor slot 1)
+    std::string pulse_key; ///< GetImage key for the item-room pulse companion (slot 3)
+    u32 canvas_w{0};
+    u32 canvas_h{0};
+    u32 bg{0xFF000000u}; ///< page background used for the compositor's full-canvas clear
+    bool active{false};  ///< set once a map quad was emitted; the caller must then clear any
+                         ///< stale composite itself when a page without a map is drawn
+};
+
+/// What a Map widget showed on its last draw, so a tap can be turned into a world position and
+/// hit-tested against the markers exactly as they were on screen.
+struct MapDrawRecord {
+    std::string page_id;
+    size_t widget_index{}; ///< index in the expanded widget list
+    std::string area;
+    std::array<s32, 4> rect{};
+    float cx{}, cy{}; ///< world point at the widget centre
+    float ppw{};      ///< canvas px per world unit
+    float min_x{}, min_y{}, max_x{}, max_y{};
+    /// Runtime 22: degrees the view is turned clockwise about the widget centre (view_rotate_bind),
+    /// normalised to [0, 360); 0 = north-up. `view_key` is the widget's ViewState key.
+    float rotation{};
+    std::string view_key;
+    struct Hit {
+        std::string group;
+        s32 index{};
+        float sx{}, sy{}; ///< canvas px of the marker's position
+        float wx{}, wy{}; ///< world position
+        float vx{}, vy{}; ///< the slot's own point values
+    };
+    std::vector<Hit> hits; ///< visible, on-screen dynamic markers of this draw
+    // Change tracking for the redraw worker's marker-only redraw (not used by taps).
+    std::array<s32, 4> marker_box{}; ///< canvas px the live marker painted ({0,0,0,0}: none)
+    u64 content_id{};     ///< identity of the pictures this draw used (base, fade, atlas)
+    u64 render_serial{};  ///< the RenderPage call that made this record (CurrentRenderSerial)
+    bool clock_dependent{}; ///< something other than the live marker was drawn from the clock
+    /// Canvas offset from the widget centre turned back into the unturned view (runtime 22).
+    [[nodiscard]] std::array<float, 2> Unturn(float dx, float dy) const {
+        if (rotation == 0.0f) {
+            return {dx, dy};
+        }
+        const float rad = rotation * 3.14159265358979f / 180.0f;
+        const float c = std::cos(rad), s = std::sin(rad);
+        return {dx * c + dy * s, -dx * s + dy * c};
+    }
+    /// The world point under canvas pixel (sx, sy), through the view's turn.
+    [[nodiscard]] std::array<float, 2> World(float sx, float sy) const {
+        const auto d =
+            Unturn(sx - (static_cast<float>(rect[0]) + static_cast<float>(rect[2]) * 0.5f),
+                   sy - (static_cast<float>(rect[1]) + static_cast<float>(rect[3]) * 0.5f));
+        return {cx + d[0] / ppw, cy - d[1] / ppw};
+    }
+    /// Unturned views only (rotation 0); World() is the general form.
+    [[nodiscard]] float WorldX(float sx) const {
+        return cx + (sx - (static_cast<float>(rect[0]) + static_cast<float>(rect[2]) * 0.5f)) / ppw;
+    }
+    [[nodiscard]] float WorldY(float sy) const {
+        return cy - (sy - (static_cast<float>(rect[1]) + static_cast<float>(rect[3]) * 0.5f)) / ppw;
+    }
+};
+using MapDrawRecords = std::vector<MapDrawRecord>;
+
+/// One widget group ("anim") as it is drawn this frame.
+struct RenderAnimGroup {
+    std::string key;
+    std::array<s32, 4> box{}; ///< the group's widgets are clipped to this rect while it moves
+    s32 dx{};                 ///< offset of the group's widgets this frame
+    s32 dy{};
+    float alpha{1.0f};
+    bool shown{false};  ///< drawn this frame: open, or still on its way out
+    bool moving{false}; ///< mid-animation (clip + offset apply)
+};
+
+/// A Map widget the redraw worker may repaint marker-only (RenderExtras::maps).
+struct RenderMapCandidate {
+    size_t index{};            ///< widget index (the page's own = the expanded one)
+    std::array<s32, 4> rect{}; ///< the widget's rect
+    u64 view_hash{};           ///< its dependency hash without the live marker's position
+    bool dirty{};              ///< its rect is in this redraw's dirty set
+};
+
+/// Optional per-frame state of a RenderPage call (animations).
+struct RenderExtras {
+    /// Draw only inside this rect ({x, y, w, h}; w or h <= 0 = the whole canvas).
+    std::array<s32, 4> clip{};
+    /// The dirty region as disjoint rects inside `clip` (their bounding box). A caller that redraws
+    /// more than one of them runs one RenderPage pass per rect (clip = that rect); RenderPage
+    /// itself only reads `clip`.
+    std::vector<std::array<s32, 4>> clips;
+    std::vector<RenderAnimGroup> groups;
+    /// Marker-only redraw (the runtime's redraw worker; RenderPage reads none of this). `maps`
+    /// lists the page's Map widgets that qualify (see ModRuntime::BuildRenderExtras) with the hash
+    /// of everything they draw from except the live marker's position; `other_clips` is `clips`
+    /// without the rects of the `dirty` ones, so the worker can swap a map's whole rect for the
+    /// marker's old and new boxes when nothing else about that map changed. Empty `maps`: no
+    /// narrowing, `clips` as it is.
+    std::vector<RenderMapCandidate> maps;
+    std::vector<std::array<s32, 4>> other_clips;
+    /// Bookkeeping ModRuntime::PublishUi keeps in its own render_extras between publishes (not
+    /// read by RenderPage): a follow-view glide is still in flight, so the page's Map widgets must
+    /// be redrawn on the next publish even when nothing bound changed.
+    bool glide_owed{false};
+    [[nodiscard]] const RenderAnimGroup* Find(const std::string& key) const {
+        for (const auto& g : groups) {
+            if (g.key == key) {
+                return &g;
+            }
+        }
+        return nullptr;
+    }
+};
+
+/// The box a widget group animates in: the first member's explicit box, else the union of the
+/// members' rects that have a size. {0,0,0,0} when the page has no such group.
+std::array<s32, 4> AnimGroupBox(const std::vector<Widget>& widgets, const std::string& key);
+
+/// The rect of the first widget with this id (expanded widgets, so repeats/{i} and x_bind/y_bind
+/// already resolved), or nullopt when there is none / the id is empty. Shared by the page-level
+/// "origin" key (grow/shrink) and the group-level "from": "widget:<id>".
+std::optional<std::array<s32, 4>> WidgetRectById(const std::vector<Widget>& widgets,
+                                                 const std::string& id);
+
+/// A page transition frame: `from` / `to` are whole canvases of w x h. slide_up: the target page's
+/// top edge is at h * (1 - eased); slide_down: the current page's top edge is at h * eased. A
+/// `shadow` (0..1) darkens 24 rows of the lower page right above that edge. Writes all of `out`.
+void ComposePageSlide(std::span<u32> out, std::span<const u32> from, std::span<const u32> to, u32 w,
+                      u32 h, PageTransition kind, float eased, float shadow);
+
+/// A grow/shrink page transition frame: `background` (a whole w x h canvas) shows
+/// everywhere outside the rect that lerps from `origin` (p=0) to `dest` (p=1); inside that rect,
+/// `moving` (also a whole w x h canvas -- the page at its natural, fully-open size) is nearest-
+/// neighbour scaled to fill it, fading in over the first quarter of `p` so a heavily downscaled
+/// first frame doesn't flash as noise. `shadow` (0..1) darkens a ~28 px band of `background` just
+/// outside the rect's edge, strongest right at it (the slide transition's edge shadow, wrapped
+/// around a rect). Cost is one memcpy of `background` plus the scaled blit and shadow band, both
+/// bounded to the rect (the whole canvas only at the rect's largest, i.e. dest itself). Writes all
+/// of `out`.
+void ComposePageGrow(std::span<u32> out, std::span<const u32> background,
+                     std::span<const u32> moving, u32 w, u32 h, std::array<s32, 4> origin,
+                     std::array<s32, 4> dest, float p, float shadow);
+
+/// A cross-fade page transition frame: `from` / `to` are the exact same two whole
+/// w x h canvases a slide/grow transition already has (the one-time "render each page ONCE"
+/// snapshots) -- Fade just alpha-blends `to` over `from` by `eased` (0 = all `from`, 1 = all
+/// `to`), pixel for pixel, no scaling and no shadow band. This is deliberately the cheapest
+/// transition of the set: no LUT, no rect geometry, no separate background memcpy -- a single
+/// pass writing every pixel once (`eased` at the extremes short-circuits to a plain memcpy of
+/// the relevant canvas, same as the composited result would be anyway). `origin` and `shadow`
+/// from the action are not accepted here at all -- both are meaningless for a plain fade and are
+/// documented as ignored rather than silently accepted and dropped.
+/// Writes all of `out`.
+void ComposePageFade(std::span<u32> out, std::span<const u32> from, std::span<const u32> to, u32 w,
+                     u32 h, float eased);
+
+/// Whether a PointGate is open against a snapshot (ints first, then floats; missing = 0).
+bool GateOpen(const PointGate& gate, const StateSnapshot& snapshot);
+/// A published value by name: ints first, then floats.
+std::optional<f64> SnapshotNumber(const StateSnapshot& snapshot, const std::string& key);
+
+/// Draws one page of the manifest using the latest snapshot. Returns false when nothing is
+/// drawable. `animating` (optional) reports that a view glide is still in flight, so the caller
+/// should redraw next tick even when nothing bound changed. `map_records` (optional) receives what
+/// every Map widget drew (cleared first).
+/// `follow_state_mutex` (last parameter,
+/// deliberately -- see below), when non-null, is locked around every write to `*follow_state` the
+/// Map widget's draw case makes (the camera-follow glide easing and pan-correction write). The
+/// caller (ModRuntime::RenderPageTo) passes its own `view_mutex` -- the same lock
+/// `ApplyViewCorrections` already takes to read/consume those corrections right after this call
+/// returns -- so the two sides of that hand-off share one lock instead of inventing a second
+/// one. Null is safe (no locking, today's behaviour) for any caller that
+/// doesn't pass `follow_state` either (`RenderDebugPage`-style callers, tests). Placed LAST, not
+/// next to `follow_state`, so every existing positional call site (this codebase's own tests
+/// included) that stops before `extras` keeps compiling and keeps its existing meaning unchanged --
+/// inserting it mid-list would silently reinterpret every trailing positional argument at every
+/// such call site.
+///
+/// `manifest_markers_mutex`: when non-null, locked around the Map widget's marker-visibility reads
+/// (`manifest.map_areas[area].markers[i].hidden/.opened/.collected/.unveiled/.veiled`) -- the same
+/// lock `ModRuntime::UpdateHiddenMarkers` already holds for its whole body (`map_state_mutex`,
+/// reused here rather than a new lock, same reasoning as `follow_state_mutex`/`view_mutex`). Added
+/// last of all, after `follow_state_mutex`, for the identical positional-compatibility reason.
+///
+/// `image_fallback` (optional, owns its own lock -- see `ImageFallbackState`): an Image widget
+/// whose resolved source is still decoding (a null from `images`) draws the last picture this
+/// widget instance actually drew instead of nothing, and an Image widget with "src_fade_ms" set
+/// cross-fades into a newly landed picture instead of swapping instantly. Null (every call site
+/// that predates this, every test) keeps both exactly off, today's behaviour: a pending decode
+/// draws nothing, a new picture swaps instantly. Added last of all, for the same
+/// positional-compatibility reason as `follow_state_mutex`/`manifest_markers_mutex`.
+bool RenderPage(Canvas& canvas, const Manifest& manifest, const Page& page,
+                const StateSnapshot& snapshot, const ImageProvider& images = {},
+                const ViewState& views = {}, MapFollowState* follow_state = nullptr,
+                const VisitReporter& report_visit = {}, const VisitedQuery& is_visited = {},
+                AuxDrawList* draw_list = nullptr, bool* animating = nullptr,
+                const TextProvider& texts = {}, MapDrawRecords* map_records = nullptr,
+                const RenderExtras* extras = nullptr, std::mutex* follow_state_mutex = nullptr,
+                std::recursive_mutex* manifest_markers_mutex = nullptr,
+                ImageFallbackState* image_fallback = nullptr);
+
+/// A hash of what a page draw paints outside every widget's own rect, which no per-widget
+/// dependency hash sees: the drag ghost and drop-target highlight (snapshot.drag, "@drag*") and
+/// the scroll regions' bar gates ("@scroll_on:*"). A change needs a whole-page redraw.
+u64 UncoveredDrawInputsHash(const StateSnapshot& snapshot);
+
+/// A number unique to the RenderPage call running on this thread (0 before the first one); the
+/// MapDrawRecords a call makes carry it (MapDrawRecord::render_serial).
+u64 CurrentRenderSerial();
+
+/// The view (area, rect, cx / cy / ppw, extent; the MapDrawRecord fields) a draw of Map widget
+/// `widget` (page widget index `widget_index`) would use for this snapshot, these views and this
+/// follow state, without drawing anything or changing `follow`. nullopt when the widget would not
+/// draw a geometry view (no map data for its area, no position yet).
+/// Runtime 22: a Map widget's view turn ("view_rotate_bind"), clockwise degrees in [0, 360);
+/// 0 when the key is unset, its value missing or nonfinite.
+float MapViewTurnDegrees(const Widget& widget, const StateSnapshot& snapshot);
+
+std::optional<MapDrawRecord> ProbeMapView(const Manifest& manifest, const Page& page,
+                                          const StateSnapshot& snapshot, const Widget& widget,
+                                          size_t widget_index, const ViewState& views,
+                                          const MapFollowState& follow);
+
+/// A conservative box (canvas px, clipped to the widget) of every pixel the live player marker of
+/// Map widget `widget` would paint for `snapshot` if the map were drawn with exactly the view in
+/// `view` (a record of that widget's last draw). {0,0,0,0} when it would paint nothing. The
+/// caller checks the real draw's MapDrawRecord::marker_box against it afterwards.
+std::array<s32, 4> PredictMapMarkerBox(const Manifest& manifest, const Widget& widget,
+                                       const StateSnapshot& snapshot, const MapDrawRecord& view,
+                                       const ImageProvider& images);
+
+/// Draws a generated page listing every data point with its resolved address and value, so a
+/// broken pointer chain is obvious on the device instead of silently reading zero.
+void RenderDebugPage(Canvas& canvas, const Manifest& manifest, const StateSnapshot& snapshot);
+
+/// Repeating widgets become one widget per element (drawing and hit-testing share the answer).
+/// A template in a scroll region (Widget::scroll) expands only its rows visible through the
+/// region's rect at the offset published as "@scroll:<id>", shifted up by that offset and tagged
+/// with the rect as their scroll_clip.
+std::vector<Widget> ExpandWidgets(const Page& page, const StateSnapshot& snapshot);
+struct ScrollMemo;
+/// ExpandWidgets into reusable storage: slots [0, returned count) hold the expansion, copy-assigned
+/// over whatever Widgets were there (their strings keep their capacity), later slots are leftovers.
+size_t ExpandWidgetsInto(const Page& page, const StateSnapshot& snapshot,
+                         std::vector<Widget>& slots);
+/// ExpandWidgetsInto by reference: `refs` gets one pointer per expanded widget, into `page` for a
+/// widget the expansion leaves as it is, else into `slots` (valid until `slots` or `page` change).
+void ExpandWidgetRefsInto(const Page& page, const StateSnapshot& snapshot,
+                          std::vector<Widget>& slots, std::vector<const Widget*>& refs);
+/// ExpandRepeatTemplate into reusable storage (slots [0, returned count)). With `slot_index` (the
+/// element index each slot was last built for, kept by the caller alongside `slots` for this one
+/// template and cleared whenever the template may have changed), a slot already holding element i
+/// only has its rect recomputed.
+size_t ExpandRepeatTemplateInto(const Page& page, const Widget& source,
+                                const StateSnapshot& snapshot, std::vector<Widget>& slots,
+                                std::vector<s64>* slot_index = nullptr, ScrollMemo* memo = nullptr);
+
+/// Drag-to-scroll lists (Page::scrolls). The snapshot key holding a region's pixel offset.
+std::string ScrollOffsetKey(const std::string& id);
+/// "@scroll_x:<id>": the region's x offset (two-axis regions; absent / 0 on a y-only one).
+std::string ScrollOffsetXKey(const std::string& id);
+/// The region of this id on the page, or nullptr.
+const ScrollRegion* FindScrollRegion(const Page& page, const std::string& id);
+/// Elements a repeat template draws this tick (repeat_bind / repeat_div, capped by repeat).
+s64 RepeatElementCount(const Widget& widget, const StateSnapshot& snapshot);
+/// A template's own row pitch (repeat_row_dy in a grid, else repeat_dy).
+s32 RepeatRowPitch(const Widget& widget);
+struct ScrollMetrics {
+    s64 count{0}; ///< elements in the list
+    s32 row_h{0}; ///< px per content row
+    s32 cols{1};
+    s64 content_h{0};  ///< px of content (rows * row_h + pad)
+    s32 max_offset{0}; ///< largest valid offset (0 = everything fits)
+    // Two-axis regions (ScrollRegion::axes): the x extent and offset limit; 0 on a y-only
+    // region, so every caller that ignores x keeps today's behaviour.
+    s64 content_w{0};
+    s32 max_offset_x{0};
+};
+/// Content size of a region against the snapshot (count_bind, else the largest template count).
+ScrollMetrics MeasureScroll(const Page& page, const ScrollRegion& region,
+                            const StateSnapshot& snapshot);
+/// Follow (ScrollRegion::follow_bind): the offset that shows element `index`'s row whole, moving
+/// the least from `offset` (unchanged when the row is already in view; a row taller than the
+/// viewport aligns its top). Clamped to 0..max_offset. `view_h` is the region's rect height.
+float FollowOffset(const ScrollMetrics& m, s32 view_h, s64 index, float offset);
+/// MeasureScroll per region, computed at most once while one snapshot is being expanded or
+/// scanned (it walks every widget of the page, once per region).
+struct ScrollMemo {
+    std::vector<ScrollMetrics> metrics;
+    std::vector<char> known;
+    const ScrollMetrics& Get(const Page& page, const ScrollRegion& region,
+                             const StateSnapshot& snapshot);
+    void Reset(size_t regions) {
+        metrics.assign(regions, ScrollMetrics{});
+        known.assign(regions, 0);
+    }
+};
+/// The scroll offset of a region clamped to [0, max_offset] from the snapshot.
+s32 ScrollOffset(const ScrollRegion& region, const StateSnapshot& snapshot);
+/// The region's published x offset ("@scroll_x:<id>"), clamped like ScrollOffset; 0 unless the
+/// region scrolls on x.
+s32 ScrollOffsetX(const ScrollRegion& region, const StateSnapshot& snapshot);
+/// The scroll offset a widget of the region applies, per its scroll_follow and the region's axes:
+/// {dx, dy} to subtract from its rect.
+std::array<s32, 2> ScrollShift(const Widget& widget, const ScrollRegion& region, s32 offset_x,
+                               s32 offset_y);
+/// Half-open element range [first, last) of a template whose rows touch the region's rect at the
+/// given offset (clamped to [0, rows)). Pure; shared by ExpandWidgets and tests. An element paints
+/// its rect's rows, widened to [paint_top, paint_bottom) relative to its rect's top when those
+/// reach further (a label's text past a zero or short rect height: RowPaintSpan).
+std::pair<s64, s64> VisibleElementRange(const Widget& widget, const ScrollRegion& region,
+                                        s32 base_y, s32 offset, s64 rows, s32 paint_top = 0,
+                                        s32 paint_bottom = 0);
+/// Vertical span {top, bottom} a repeat template's element can paint, relative to its rect's top,
+/// beyond its rect: the text of a Label / Value / Button (built-in metrics plus a descender
+/// margin for a game font, capped at `max_h`); {0, 0} for other widgets. For the scroll-row cull,
+/// so a label whose rect scrolled above the viewport while its text still shows is drawn
+/// (clipped), not dropped.
+std::array<s32, 2> RowPaintSpan(const Widget& widget, const StateSnapshot& snapshot, s32 max_h);
+/// Thumb rect of a region's scrollbar, {0,0,0,0} when the list fits or no bar is configured.
+std::array<s32, 4> ScrollBarThumb(const ScrollRegion& region, const ScrollMetrics& m, s32 offset);
+/// The horizontal scrollbar thumb along the rect's bottom edge (two-axis regions); w/h 0 = none.
+std::array<s32, 4> ScrollBarThumbX(const ScrollRegion& region, const ScrollMetrics& m,
+                                   s32 offset_x);
+/// One axis of an x_bind/y_bind widget's live on-screen offset: `base` when `bind` is empty,
+/// otherwise `base + snapshot_value(bind) * scale` (clamped to a finite canvas-ish range) -- the
+/// exact formula ExpandWidgets' own `position()` lambda applies to `widget.rect[0]`/`rect[1]` at
+/// draw time. Extracted so dirty-rect computation (BuildRenderExtras/WidgetEffectiveRect,
+/// mod_redraw.cpp) can resolve a widget's TRUE drawn position instead of only ever seeing its
+/// static declared `rect` (that mismatch made a bound marker's dirty rect lag its drawn position --
+/// see mod_redraw.cpp's WidgetEffectiveRect for the full explanation).
+s32 ResolveBindOffset(s32 base, const std::string& bind, float scale,
+                      const StateSnapshot& snapshot);
+/// The shared visibility rule used by drawing, taps, and gesture targeting (need / hide gates and
+/// the "anim" gate).
+bool WidgetHidden(const Widget& widget, const StateSnapshot& snapshot);
+/// How far a widget can paint outside its rect of `rw` x `rh`: a spinning picture's rotated
+/// corners, a trembling one's shake offset, a rotated / scaled picture's box (runtime 16; read from
+/// `snapshot` when it has rotate_bind / scale_bind -- without one, a bound rotation counts as any
+/// angle and a bound scale as 1x). 0 for everything else. Dirty boxes are widened by it.
+s32 WidgetDrawOverhang(const Widget& widget, s32 rw, s32 rh,
+                       const StateSnapshot* snapshot = nullptr);
+/// Runtime 16: an Image widget's resolved rotate / rotate_bind / scale_bind / pivot.
+struct ImageTransform {
+    bool active{false};  ///< a runtime 16 transform key is set (else the classic draw path)
+    float degrees{0.0f}; ///< rotate + rotate_bind (+ = clockwise; spin not included)
+    float scale{1.0f};   ///< scale_bind / 1000, clamped to 0..16
+    float pivot_x{0.0f}; ///< px from the rect's top-left
+    float pivot_y{0.0f};
+};
+ImageTransform WidgetImageTransform(const Widget& widget, s32 rw, s32 rh,
+                                    const StateSnapshot* snapshot);
+/// Runtime 16: {x0, y0, x1, y1} (half-open) covering every pixel of the rect {x, y, rw, rh}
+/// scaled by `scale` and turned by `degrees` about (x + pivot_x, y + pivot_y), with a 1 px margin.
+/// Canvas::DrawImageTransformed never paints outside it.
+std::array<s32, 4> TransformedImageBounds(s32 x, s32 y, s32 rw, s32 rh, float degrees, float scale,
+                                          float pivot_x, float pivot_y);
+/// Runtime 16: the colour that tints an Image / Pips / Bar image: tint_colors[tint_bind value]
+/// when that is in range, else `tint` when set, else `fallback` (the widget's classic colour).
+u32 WidgetTint(const Widget& widget, const StateSnapshot& snapshot, u32 fallback);
+/// Runtime 16: `out` becomes a w x h picture of the source region {sx, sy, sw, sh} of `src`, tiled
+/// at its own size (ImageFill::Tile) or 9-sliced by `slice` {l, t, r, b} source px
+/// (ImageFill::Slice); texels are copied, not blended (nearest sampling, the DrawImageRegion
+/// formula). Stretch scales the region over the whole picture.
+void ComposeImageFill(Image& out, s32 w, s32 h, const Image& src, s32 sx, s32 sy, s32 sw, s32 sh,
+                      ImageFill fill, const std::array<s32, 4>& slice);
+/// Conservative box of every pixel a Label/Value widget's text can paint for this snapshot, drawn
+/// at (x, y) with resolved size rw x rh: the font's real ascent/descent (whichever of `font` and
+/// the built-in font is used) and a width bound from the shown text's byte length. {0,0,0,0} for
+/// other widget types. Dirty boxes and the partial-redraw pre-reject use it so long text or a tall
+/// font never leaves pixels outside the box that gets repainted.
+std::array<s32, 4> WidgetTextBounds(const Widget& widget, s32 x, s32 y, s32 rw, s32 rh,
+                                    const StateSnapshot& snapshot, const Manifest& manifest,
+                                    const FontMetrics* font, s32 canvas_w, s32 canvas_h);
+/// Everything a widget can paint outside its own rect for this snapshot: WidgetTextBounds for
+/// Label/Value/Button text, the whole run for Pips; {0,0,0,0} when it stays inside its rect.
+std::array<s32, 4> WidgetPaintBounds(const Widget& widget, s32 x, s32 y, s32 rw, s32 rh,
+                                     const StateSnapshot& snapshot, const Manifest& manifest,
+                                     const FontMetrics* font, s32 canvas_w, s32 canvas_h);
+/// WidgetHidden with one point held open (a group sliding out keeps its gated widgets drawn).
+bool WidgetHiddenHolding(const Widget& widget, const StateSnapshot& snapshot,
+                         const std::string& held_point);
+/// The plain stand-in the canvas draws for a code point its font lacks (’ -> ', é -> e), 0 = none.
+char32_t TextFallbackCodepoint(char32_t c);
+/// Bytes of `text` taken by colour tags (Canvas::SetColorMarkup): they draw nothing.
+size_t TextMarkupBytes(std::string_view text);
+/// Runtime 17 "group": `value` with `sep` between groups of three digits ("-1,234,567"), first
+/// zero-padded to `pad` characters like printf's %0*lld (the sign counts).
+std::string FormatGroupedNumber(s64 value, s32 pad, std::string_view sep);
+/// The text a Label shows for this snapshot: picked by value (text_bind + text_map), by key
+/// (text_src), a string point (bind_text, "-" while missing) or the literal; nullptr = nothing
+/// (an unmapped value, or an msbt key the provider cannot answer yet). `owner` keeps a resolved
+/// msbt string alive while the pointer is in use.
+const std::string* LabelShownText(const Widget& widget, const StateSnapshot& snapshot,
+                                  const TextProvider& texts,
+                                  std::shared_ptr<const std::string>& owner);
+/// Runtime 17 auto_w: while one of these is alive on a thread, ExpandWidgets on that thread sizes
+/// auto_w Label/Button widgets by their text, measured on `canvas` (its fonts, colour markup set
+/// per widget) with Label text resolved through `texts`. Without one, auto_w widgets keep their
+/// declared rect. Scopes nest (the previous one is restored).
+class TextMeasureScope {
+public:
+    TextMeasureScope(Canvas& canvas, const TextProvider* texts);
+    ~TextMeasureScope();
+    TextMeasureScope(const TextMeasureScope&) = delete;
+    TextMeasureScope& operator=(const TextMeasureScope&) = delete;
+
+private:
+    Canvas* prev_canvas;
+    const TextProvider* prev_texts;
+};
+/// Runtime 17 auto_w: the box of an auto_w widget declared at rect {x, y, w, h} whose text is
+/// text_w px wide and (Label) text_h px tall from its cap top. Button: the width grows to fit
+/// (align 1 about the declared centre, else from the left edge). Label: the box around the text
+/// at its anchor, `pad` px on every side, at least the declared w wide.
+std::array<s32, 4> AutoWidthBox(const Widget& widget, const std::array<s32, 4>& rect, s32 text_w,
+                                s32 text_h);
+/// Where a Label whose rect is its auto_w box (auto_box) anchors its text: {x, y} for DrawLabel's
+/// align (left edge + pad, centre, right edge - pad; cap top = box top + pad).
+std::array<s32, 2> AutoBoxTextAnchor(const Widget& widget, s32 x, s32 y, s32 rw);
+/// Sizes one expanded auto_w widget by its text (see TextMeasureScope); a no-op for any other
+/// widget, or with no scope on this thread. Call once, on a rect that is still the declared one.
+void ApplyAutoWidth(Widget& widget, const StateSnapshot& snapshot);
+/// Hit-tests a tap in canvas pixels; returns the action name of the widget hit, or "".
+std::string HitTest(const Page& page, const StateSnapshot& snapshot, s32 x, s32 y);
+/// Index of the topmost visible expanded widget under (x, y) that `accept` admits, or -1.
+s64 HitTestIndex(const std::vector<Widget>& expanded, const StateSnapshot& snapshot, s32 x, s32 y,
+                 const std::function<bool(const Widget&)>& accept);
+/// The value a widget carries (`payload`, already "{i}"-expanded): a literal integer, or the
+/// published int a "$name" payload names. nullopt when there is none.
+std::optional<s64> WidgetPayload(const Widget& widget, const StateSnapshot& snapshot);
+/// WidgetPayload, plus "payload": "$tap" (runtime 22): the tap point relative
+/// to the widget's content -- inside a scroll region, relative to the region's content origin
+/// (rect origin, plus the region's current offsets), so a tap on scrolled module art names the
+/// content pixel; elsewhere relative to the widget's rect. Packed like PackPanPayload: x in the
+/// high 32 bits, y in the low 32 (both signed).
+std::optional<s64> TapPayload(const Page& page, const Widget& widget, const StateSnapshot& snapshot,
+                              s32 x, s32 y);
+
+} // namespace Core::Mods

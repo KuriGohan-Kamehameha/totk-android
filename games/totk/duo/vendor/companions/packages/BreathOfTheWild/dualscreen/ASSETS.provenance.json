@@ -1,0 +1,97 @@
+{
+ "format": 1,
+ "files": {
+  "assets/stamina-[0-9][0-9][0-9].png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent"
+  },
+  "assets/ready-native-secondary-condition-[0-9][0-9][0-9].png": {
+   "origin": "generated",
+   "source": "tools/migrate-native-ready.py -- ImageDraw arc gauge frames (restyle recolours exact pixels)"
+  },
+  "assets/cmdbar-*.png": {
+   "origin": "generated",
+   "source": "tools/i13-buttons.py -- command bars drawn from measured geometry (rounded corners, lines, arrows, blur, seeded noise)"
+  },
+  "assets/solid-[0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F].png": {
+   "origin": "generated",
+   "source": "tools/asset-compliance.py -- 1x1 flat colour layers for romfs-masked composites"
+  },
+  "assets/pov-cone.png": {
+   "origin": "generated",
+   "source": "tools/asset-compliance.py -- view cone drawn from measured geometry (wedge, linear falloff, rim clip)"
+  },
+  "assets/map-place-backing.png": {
+   "origin": "generated",
+   "source": "tools/asset-compliance.py -- soft near-black disc (radial falloff)"
+  },
+  "assets/temp-half-cyan.png": {
+   "origin": "generated",
+   "source": "tools/critic-fixes-iter3.py -- per-pixel half annulus, flat colour"
+  },
+  "assets/temp-half-orange.png": {
+   "origin": "generated",
+   "source": "tools/critic-fixes-iter3.py -- per-pixel half annulus, flat colour"
+  },
+  "assets/ready-*-mask.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py, migrate-native-ready.py / add-map-view.py -- ImageDraw polygons, ellipses, rounded rects (alpha masks for romfs composites)"
+  },
+  "assets/ready-*-inlay-mask.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- per-pixel curve masks for the cap inlays"
+  },
+  "assets/ready-*-frame.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py, migrate-native-ready.py -- ImageDraw outlines (restyle whitens: alpha kept)"
+  },
+  "assets/ready-native-arrow-up.png": {
+   "origin": "generated",
+   "source": "tools/migrate-native-ready.py -- ImageDraw triangle"
+  },
+  "assets/ready-native-arrow-down.png": {
+   "origin": "generated",
+   "source": "tools/migrate-native-ready.py -- ImageDraw triangle"
+  },
+  "assets/ready-native-swap.png": {
+   "origin": "generated",
+   "source": "tools/migrate-native-ready.py -- ImageDraw polygon"
+  },
+  "assets/ready-food-seams.png": {
+   "origin": "generated",
+   "source": "tools/ready-circles-final.py -- ImageDraw lines and circle"
+  },
+  "assets/ready-clothes-seams.png": {
+   "origin": "generated",
+   "source": "tools/ready-circles-final.py -- ImageDraw lines and circle"
+  },
+  "assets/pg-ready-lift-cover.png": {
+   "origin": "generated",
+   "source": "tools/restyle-pause-glass.py -- computed lift profile mask"
+  },
+  "assets/pg-ready-halo-mask.png": {
+   "origin": "generated",
+   "source": "tools/restyle-pause-glass.py -- computed radial halo mask"
+  },
+  "assets/pg-notch-mask.png": {
+   "origin": "generated",
+   "source": "tools/restyle-pause-glass.py -- computed notch mask"
+  },
+  "assets/map-transparent.png": {
+   "origin": "generated",
+   "source": "tools/add-map-view.py -- 1x1 transparent"
+  },
+  "assets/map-circle-outside.png": {
+   "origin": "generated",
+   "source": "tools/add-map-view.py -- ImageDraw ellipse cut-out"
+  },
+  "assets/i13-tw-capsule.png": {
+   "origin": "generated",
+   "source": "tools/i13-timeweather.py -- ImageDraw rounded rectangle"
+  },
+  "assets/i13-tw-clockplate.png": {
+   "origin": "generated",
+   "source": "tools/i13-timeweather.py -- ImageDraw rounded rectangle, blurred"
+  }
+ }
+}

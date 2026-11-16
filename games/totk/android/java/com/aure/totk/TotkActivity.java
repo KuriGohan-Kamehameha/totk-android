@@ -9,7 +9,7 @@ import android.util.Log;
 import android.view.AttachedSurfaceControl;
 import android.view.Display;
 import android.view.View;
-import com.aure.totk.companion.AssetStore;
+import com.aure.totk.companion.CompanionContent;
 import com.aure.totk.companion.CompanionNative;
 import com.aure.totk.companion.DisplayClass;
 import com.aure.totk.companion.PresentationController;
@@ -147,7 +147,8 @@ public final class TotkActivity extends NativeActivity {
         // NativeActivity synchronously loads totk.env in ANativeActivity_onCreate.
         // Query only after super, before constructing a controller or display listener.
         // The companion art is generated on the device by the optional setup stage; without it the companion stays off.
-        if (CompanionNative.isEnabled() && AssetStore.available(this)) companion = new PresentationController(this, new CompanionNative());
+        // (CompanionContent is per game build: Tears of the Kingdom's is that check, unchanged.)
+        if (CompanionContent.available(this)) companion = new PresentationController(this, new CompanionNative());
         saves = SaveMirror.Watcher.start(this);
         int given = nativeFeedbackEnabled();   // what start_game gave the game (TOTK_RUMBLE / TOTK_GYRO and the hardware)
         if (given != 0 && !isFinishing()) feedback = new GameFeedback(this, given);

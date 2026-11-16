@@ -194,6 +194,24 @@ unsigned runtime_aoc_read(uint64_t *out, uint64_t h, int64_t offset, void *buffe
 }
 unsigned runtime_aoc_size(int64_t *out, uint64_t h) { Vol *v; Entry e; if (!out || !handle_entry(h, &v, &e)) return INVALID; *out = (int64_t)e.size; return 0; }
 void runtime_aoc_close(uint64_t h) { Vol *v; Entry e; if (!handle_entry(h, &v, &e)) runtime_fail("close invalid add-on content handle"); pthread_mutex_lock(&lock); handles[h - AOC_HANDLE_BASE].entry = 0; pthread_mutex_unlock(&lock); }
+/* The companion host's reader for the add-on content (duo/duo_port.h aoc_read), as runtime_romfs_read_rel is for the
+   game's RomFS: by relative path, no handle, never fatal. The first volume only, the one the game mounts; -1 until it
+   has been loaded. */
+int64_t runtime_aoc_read_rel(const char *rel, uint64_t offset, void *out, uint64_t n) {
+    Vol *v = &vols[0];
+    if (!rel || !__atomic_load_n(&v->loaded, __ATOMIC_ACQUIRE)) return -1;
+    if (!*rel) return 0;
+    if (!romfs_path_valid_relative(rel)) return -1;
+    uint64_t i = lower(v, rel); if (i >= v->file_count || strcmp(rel, entry_name(v, entry(v, i)))) return -1;
+    Entry e = entry(v, i);
+    if (!out) return (int64_t)e.size;
+    if (offset >= e.size) return 0;
+    if (n > e.size - offset) n = e.size - offset;
+    uint64_t done = 0;
+    while (done < n) { size_t chunk = (size_t)(n - done); if (chunk > 8 << 20) chunk = 8 << 20;
+        ssize_t r = pread(v->image_fd, (uint8_t *)out + done, chunk, (off_t)(e.offset + offset + done)); if (r <= 0) break; done += (uint64_t)r; }
+    return (int64_t)done;
+}
 unsigned runtime_aoc_entry_type(int *out, const char *path) {
     const char *p = NULL; Vol *v = vol_of_path(path, &p); if (!out) return INVALID; if (!v || !p) return NOT_FOUND;
     uint64_t i = lower(v, p); if (i < v->file_count && !strcmp(entry_name(v, entry(v, i)), p)) { *out = 1; return 0; }

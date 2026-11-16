@@ -29,6 +29,9 @@ ifneq ($(DEV_BUILD),0)
   endif
 endif
 DEV_BUILD_STAMP := $(OUT)/.dev-build
+# Parallel compiles of libduo_host.so (VERSION=botw160 APP=1): its translation units are large (the companion's manifest
+# parser, the BotW module), about 1 GB of compiler each at the peak.
+DUO_JOBS ?= 4
 # GPU backend: vk (android/gfx/nvn_vk.c, Vulkan) or null (android/gfx/nvn_null.c, no GPU)
 GPU ?= vk
 # APP=1: the runtime as libtotk.so for the Android app (NativeActivity, runtime/frontend_android.c) instead of the
@@ -84,8 +87,9 @@ else ifeq ($(VERSION),v143)
 else ifeq ($(VERSION),botw160)
   # Breath of the Wild 1.6.0: the shared runtime and graphics layer compiled with GAME_BOTW; game_patches_botw.c replaces
   # game_patches.c and the nn::settings service its SDK asks for is linked in.
+  # duo_port.c: the runtime's side of the second-screen companion (duo/, libduo_host.so below); a C table and a dlopen.
   VDEF := -DGAME_BOTW=1 -DGAME_BOTW160=1
-  PATCHES := runtime/game_patches_botw.c runtime/settings_service.c runtime/aoc_romfs.c
+  PATCHES := runtime/game_patches_botw.c runtime/settings_service.c runtime/aoc_romfs.c runtime/duo_port.c
 else
   VDEF := -DTOTK_GAME_$(shell echo $(VERSION) | tr a-z A-Z)=1
   PATCHES := runtime/game_patches.c
@@ -214,6 +218,19 @@ $(OUT)/libtotk_lsfg.so: $(LSFG_INPUTS)
 	cmake -S $(LSFG) -B $(OUT)/lsfg-build -DCMAKE_TOOLCHAIN_FILE=$(NDK)/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-$(API) -DANDROID_STL=c++_shared -DCMAKE_BUILD_TYPE=Release -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$(OUT) \
 	  "-DCMAKE_C_FLAGS=$(strip $(PREFIX_MAP))" "-DCMAKE_CXX_FLAGS=$(strip $(PREFIX_MAP))"
 	cmake --build $(OUT)/lsfg-build -j4 --target totk_lsfg
+endif
+
+# The Eden Duo companion host for the Breath of the Wild app (duo/CMakeLists.txt): Eden Duo's runtime and its BotW module,
+# C++23 and GPL-3.0-or-later, in a library of its own that the runtime opens with dlopen (runtime/duo_port.c). libtotk.so
+# links none of it and starts without it.
+ifeq ($(TARGET)-$(APP)-$(VERSION),android-1-botw160)
+DUO := $(TOTK)/duo
+DUO_INPUTS := $(shell find $(DUO) -type f -not -path '*/packages/*' -not -name '*.md')
+all: $(OUT)/libduo_host.so
+$(OUT)/libduo_host.so: $(DUO_INPUTS)
+	cmake -S $(DUO) -B $(OUT)/duo-build -DCMAKE_TOOLCHAIN_FILE=$(NDK)/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-$(API) -DANDROID_STL=c++_shared -DCMAKE_BUILD_TYPE=Release -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$(OUT) \
+	  "-DCMAKE_CXX_FLAGS=$(strip $(PREFIX_MAP)) -g"
+	cmake --build $(OUT)/duo-build -j$(DUO_JOBS) --target duo_host
 endif
 
 # The Vulkan capability probe (android/vkprobe): needs no game files.

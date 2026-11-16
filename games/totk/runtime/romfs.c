@@ -35,6 +35,9 @@ static uint64_t romfs_image_size;static const char *romfs_image_sha256,*romfs_in
 #define ROMFS_IMAGE_SIZE romfs_image_size
 #define ROMFS_IMAGE_SHA256 romfs_image_sha256
 #define ROMFS_INDEX_SHA256 romfs_index_sha256
+#ifdef GAME_BOTW
+static int rel_ready;   /* runtime_fs_init has finished: runtime_romfs_read_rel may read (set once, read by other threads) */
+#endif
 static uint8_t *index_bytes;
 static size_t index_size;
 static uint64_t file_count,strings_offset;
@@ -326,7 +329,32 @@ void runtime_fs_init(void) {
  runtime_boot_status(TOTK_UI("准备游戏资源","Preparing game data"),TOTK_UI("检查分辨率补丁并挂载只读游戏资源","Checking the resolution patch and mounting the read-only game data"));
  overlay_init(dir);
  fprintf(stderr,"[totk] native read-only RomFS ready: %llu files\n",(unsigned long long)file_count);
+#ifdef GAME_BOTW
+ __atomic_store_n(&rel_ready,1,__ATOMIC_RELEASE);
+#endif
 }
+#ifdef GAME_BOTW
+/* The companion host's reader (duo/duo_port.h romfs_read; runtime/duo_port.c): a file by its path below the root,
+   with no mount name and no handle. It runs on the companion's own threads while the game reads through its handles,
+   so it takes nothing from the handle table (a full table stops the game) and no failure here is fatal: -1 is "no such
+   file", and the companion draws without it. out == NULL: the size. "" asks whether the RomFS is up at all (0 / -1).
+   Overlays are honoured, so the companion shows a mod's replaced art and text as the game does. */
+int64_t runtime_romfs_read_rel(const char *rel,uint64_t offset,void *out,uint64_t n) {
+ if(!__atomic_load_n(&rel_ready,__ATOMIC_ACQUIRE)||!rel)return -1;if(!*rel)return 0;if(!path_ok(rel))return -1;
+ uint64_t i=file_index(rel);if(i==UINT64_MAX)return -1;uint32_t ov=overlay_slot(i);
+ uint64_t base=0,size;const uint8_t *memory=NULL;int fd=image_fd,own=-1;
+ if(ov){const Overlay *o=&overlays[ov-1];size=o->size;memory=o->memory;
+  if(out&&!memory){own=fd=open(o->path,O_RDONLY|O_CLOEXEC);struct stat st;if(fd<0||fstat(fd,&st)!=0||(uint64_t)st.st_size!=size){if(fd>=0)close(fd);return -1;}}}
+ else{Entry e=entry(i);base=e.offset;size=e.size;memory=image_map?image_map+e.offset:NULL;}
+ if(!out)return (int64_t)size;
+ if(offset>=size){if(own>=0)close(own);return 0;}
+ if(n>size-offset)n=size-offset;uint64_t done=0;
+ if(memory){memcpy(out,memory+offset,(size_t)n);done=n;}
+ else while(done<n){size_t chunk=(size_t)(n-done);if(chunk>8<<20)chunk=8<<20;ssize_t r=src_pread(fd,(uint8_t *)out+done,chunk,(off_t)(base+offset+done));if(r<=0)break;done+=(uint64_t)r;}
+ if(own>=0)close(own);
+ return (int64_t)done;
+}
+#endif
 static int path_ok(const char *p) {return romfs_path_valid_relative(p);}
 static const char *rom_path(const char *path) {
  return romfs_path_relative(mount_name,path);

@@ -132,6 +132,8 @@ def build_native(work, ndk, logs, *, release, jobs, setup=True):
     if not cxx.is_file():
         raise BuildError(f'no libc++_shared.so in the NDK ({cxx})')
     libs.append(cxx)   # libtotk_lsfg.so and Vulkan drivers built against the NDK's C++ library
+    if VERSION == 'botw160':
+        libs.append(out / 'libduo_host.so')   # the Eden Duo companion host (duo/, GPL-3.0-or-later; make builds it for this game)
     if setup:
         libs += [out / 'libtotk_setup.so', out / 'libhactool.so']
     for lib in libs:
@@ -262,6 +264,12 @@ def licence_texts(work, ndk, *, setup=True):
         files['libwebp.txt'] = [work / 'src/libwebp/COPYING', work / 'src/libwebp/PATENTS']
         # texture decoders and image code ported into the companion stage (texture2ddecoder, AssetStudio, mikunyan, bimg, Pillow)
         files['companion-ports.txt'] = [HERE / 'setup/companion/THIRD_PARTY_LICENSES.txt']
+    if VERSION == 'botw160':
+        # libduo_host.so: Eden Duo's runtime and its Breath of the Wild module make this APK GPL-3.0-or-later as a whole;
+        # the notice says so, names the vendored commits and where the corresponding source is (duo/NOTICE.txt).
+        duo = t / 'duo'
+        files['Eden-Duo.txt'] = [duo / 'NOTICE.txt', duo / 'vendor/emu/LICENSE.txt']
+        files['Eden-Duo-third-party.txt'] = [duo / 'THIRD_PARTY_LICENSES.txt']
     texts = {}
     for name, sources in files.items():
         for s in sources:
@@ -274,6 +282,14 @@ def licence_texts(work, ndk, *, setup=True):
     texts['lsfg-vk-android.txt'] += ('\n\n==== SPIR-V headers (dxbc/include/spirv/thirdparty/spirv.hpp) ====\n'
                                      + line_comment(t / 'android/third_party/lsfg/third_party/dxbc/include/spirv/thirdparty/spirv.hpp') + '\n')
     texts['NVN-header.txt'] = leading_comment(t / 'third_party/d2r_gfx/gfx/nvn/include/nvn.h') + '\n'
+    if VERSION == 'botw160':
+        duo = t / 'duo/vendor'
+        texts['Eden-Duo-third-party.txt'] += ''.join(
+            f'\n\n==== {title} ====\n{path.read_text(errors="replace").rstrip()}\n' for title, path in (
+                ('nlohmann/json', duo / 'third_party/nlohmann/LICENSE.MIT'), ('unordered_dense', duo / 'third_party/ankerl/LICENSE'),
+                ('MIT', duo / 'emu/LICENSES/MIT.txt'), ('Mozilla Public License 2.0', duo / 'emu/LICENSES/MPL-2.0.txt'),
+                ('Apache License 2.0', duo / 'emu/LICENSES/Apache-2.0.txt'),
+                ('GNU General Public License 2.0 or later (files so tagged)', duo / 'emu/LICENSES/GPL-2.0-or-later.txt')))
     if setup:   # hactool's bundled third-party sources carry their notices in their headers
         hactool = work / 'src/hactool-setup'
         texts['hactool.txt'] += ''.join(f'\n\n==== {n} ====\n{leading_comment(hactool / n)}\n' for n in ('cJSON.h', 'lz4.h', 'ConvertUTF.h')
@@ -284,7 +300,7 @@ def licence_texts(work, ndk, *, setup=True):
 def stage_assets(stage, texts, commit=None):
     """assets/: fonts/ (the open fonts and their licences, android/app-assets/fonts), licenses/ (one text per component),
     shader_list.tsv (the committed shared shader list: the on-device seed's inventory, shader hashes only) and build.txt
-    (the source commit, shown in About)."""
+    (the source commit, shown in About); for Breath of the Wild also duo/ (the Eden Duo companion package)."""
     if stage.exists():
         shutil.rmtree(stage)
     (stage / 'fonts').mkdir(parents=True)
@@ -297,6 +313,11 @@ def stage_assets(stage, texts, commit=None):
     for name, text in texts.items():
         (stage / 'licenses' / name).write_text(text)
     shutil.copy2(TOTK / 'assets/shader_list.tsv', stage / 'shader_list.tsv')
+    if VERSION == 'botw160':
+        # The Breath of the Wild companion package for libduo_host.so, as Eden Duo ships it minus the load plans (not
+        # used yet): pages and code-drawn images, no game art (its ASSETS.provenance.json). DuoSurfaceView unpacks it.
+        package = TOTK / 'duo/vendor/companions/packages/BreathOfTheWild/dualscreen'
+        shutil.copytree(package, stage / 'duo/BreathOfTheWild/dualscreen', ignore=shutil.ignore_patterns('load-plans'))
     if commit:
         (stage / 'build.txt').write_text(f'commit {commit}\n')
     return stage
@@ -357,7 +378,7 @@ def package(*, out, dex, libs, translator, turnip, assets, key, key_pass_env=Non
         Path(out).unlink()
         raise
     say('signatures: ' + '; '.join(line.split(' scheme ')[0].split()[-1] for line in schemes) + ' verified by apksigner')
-    problems = audit_apk.audit(out)
+    problems = audit_apk.audit(out, game=VERSION)
     if problems:
         Path(out).unlink()
         raise BuildError('APK audit failed, APK removed:\n  ' + '\n  '.join(problems))
@@ -402,7 +423,7 @@ def source_commit():
 def main(argv):
     args = parse_args(argv)
     if args.audit:
-        problems = audit_apk.audit(args.audit)
+        problems = audit_apk.audit(args.audit, game=args.game)
         for p in problems:
             print(f'{args.audit}: {p}')
         if problems:

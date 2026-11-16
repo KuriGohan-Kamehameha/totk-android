@@ -1,0 +1,26 @@
+Third-party code compiled into libduo_host.so (Breath of the Wild build), besides Eden Duo itself (Eden-Duo.txt)
+================================================================================================================
+
+nlohmann/json 3.12.0 (vendor/third_party/nlohmann) -- MIT
+    Copyright (c) 2013-2025 Niels Lohmann. Text below ("nlohmann/json").
+
+ankerl::unordered_dense 4.8.1 at 7b55cab841, with Eden's patch 0001-avoid-memset-when-clearing-an-empty-table
+(vendor/third_party/ankerl) -- MIT
+    Copyright (c) 2022 Martin Leitner-Ankerl. Text below ("unordered_dense").
+
+stb_image 2.28, stb_image_resize 0.97, stb_image_write 1.16 (vendor/emu/externals/stb) -- public domain (or MIT)
+    Sean Barrett and contributors; the licence statement is at the end of each header.
+
+bc_decoder (vendor/emu/externals/bc_decoder) -- MPL-2.0
+    Copyright (c) 2022 Skyline Team and Contributors (https://github.com/skyline-emu/). Mozilla Public License 2.0,
+    text below; its source is the two unmodified files in that directory.
+
+ASTC decoder (vendor/emu/src/video_core/textures/astc.cpp) -- Apache-2.0 portions inside a GPL-3.0-or-later file
+    Copyright 2016 The University of North Carolina at Chapel Hill (FasTC, http://gamma.cs.unc.edu/FasTC/).
+    Apache License 2.0, text below.
+
+CityHash (vendor/emu/src/common/cityhash.cpp, cityhash.h) -- MIT
+    Copyright (c) 2011 Google, Inc. (Geoff Pike, Jyrki Alakuijala). MIT text below ("MIT").
+
+LLVM libc++ (the NDK's libc++_shared.so and the parts of it compiled in) -- Apache-2.0 with LLVM exceptions:
+    LLVM-libc++.txt.

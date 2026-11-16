@@ -82,6 +82,26 @@ class AuditTests(unittest.TestCase):
         stored = self.audit({**GOOD, 'assets/shader_list.tsv': committed}, stored=('assets/shader_list.tsv',))
         self.assertTrue(any('must be compressed' in p for p in stored))
 
+    def test_eden_duo_companion_is_admitted_for_breath_of_the_wild_only(self):
+        """libduo_host.so and its package (games/totk/duo/vendor) belong to the botw160 build alone, and the package must
+        be the vendored one byte for byte."""
+        package = audit_apk.DUO_PACKAGE
+        duo = {'lib/arm64-v8a/libduo_host.so': ELF,
+               audit_apk.DUO_ASSETS + 'manifest.json': (package / 'manifest.json').read_bytes(),
+               audit_apk.DUO_ASSETS + '8E9978D50BDD20B4.json': (package / '8E9978D50BDD20B4.json').read_bytes(),
+               audit_apk.DUO_ASSETS + 'assets/pov-cone.png': (package / 'assets/pov-cone.png').read_bytes()}
+        botw = lambda entries: audit_apk.audit(apk(self.dir / f'{len(os.listdir(self.dir))}.apk', entries), game='botw160')
+        self.assertEqual(botw({**GOOD, **duo}), [])
+        self.assertEqual(botw(GOOD), [])   # the companion is optional: the app starts without the library
+        for name in duo:
+            with self.subTest(name=name):
+                self.assertTrue(any('not on the allowlist' in p for p in self.audit({**GOOD, name: duo[name]})))
+        changed = {**GOOD, **duo, audit_apk.DUO_ASSETS + 'assets/pov-cone.png': b'\x89PNG other'}
+        self.assertTrue(any('differs from the vendored companion package' in p for p in botw(changed)))
+        for name in ('load-plans/8E9978D50BDD20B4C8395A106C27FFDE00000000000000000000000000000000.json', 'assets/map.jpg', 'x.so'):
+            with self.subTest(name=name):
+                self.assertNotEqual(botw({**GOOD, **duo, audit_apk.DUO_ASSETS + name: b'{}'}), [])
+
     def test_turnip_must_be_the_pinned_build(self):
         self.assertTrue(any('pinned Turnip' in p for p in self.audit({**GOOD, 'lib/arm64-v8a/libtotk_turnip.so': ELF})))
 

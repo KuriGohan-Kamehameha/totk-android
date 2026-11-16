@@ -358,9 +358,7 @@ public final class PresentationController implements DisplayManager.DisplayListe
             @Override protected void onCreate(Bundle state) {
                 super.onCreate(state);
                 immersive(getWindow(), true);
-                CompanionView view = new CompanionView(getContext(), source);
-                view.setPage(initialPage);
-                setContentView(view);
+                setContentView(CompanionContent.create(getContext(), source, initialPage));
             }
         };
         next.setOnDismissListener(dialog -> {

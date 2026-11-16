@@ -19,6 +19,7 @@
 #define TOTK_UI(zh, en) (en)   /* Android: the progress text is English (the Mac build picks by UI language) */
 #endif
 #include <fcntl.h>
+#include <stdatomic.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -172,7 +173,10 @@ unsigned runtime_aoc_open(uint64_t *out, const char *path, int mode) {
     const char *p = NULL; Vol *v = vol_of_path(path, &p);
     if (!out || mode != 1) return UNSUPPORTED;
     if (!v || !p) return NOT_FOUND;
-    uint64_t i = lower(v, p); if (i >= v->file_count || strcmp(p, entry_name(v, entry(v, i)))) return NOT_FOUND;
+    uint64_t i = lower(v, p); int found = i < v->file_count && !strcmp(p, entry_name(v, entry(v, i)));
+    { static int on = -1; static _Atomic int left = 20000; if (on < 0) { const char *e = getenv("TOTK_AOC_LOG"); on = e && *e && strcmp(e, "0"); }   /* TOTK_AOC_LOG=1: every open of the add-on content (which files a mod must supply) */
+      if (on && left-- > 0) fprintf(stderr, "[aoc-open] %s -> %s%s\n", p, found ? "found" : "missing", found && !entry(v, i).size ? " (empty)" : ""); }
+    if (!found) return NOT_FOUND;
     pthread_mutex_lock(&lock);
     for (unsigned j = 1; j < AOC_NH; j++) if (!handles[j].entry) { handles[j].vol = (uint8_t)(v - vols); handles[j].entry = i + 1; *out = AOC_HANDLE_BASE + j; pthread_mutex_unlock(&lock); return 0; }
     pthread_mutex_unlock(&lock); runtime_fail("add-on content file handle table full"); return INVALID;

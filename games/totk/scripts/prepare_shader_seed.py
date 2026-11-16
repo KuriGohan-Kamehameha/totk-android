@@ -7,6 +7,16 @@ shader list (assets/shader_list.tsv, docs/shader-list.md) names for a shader of 
 iPhone or iPad, which cannot translate while playing, carries what players have met. The output contains game-derived
 data and belongs in the work folder, never in the repo.
 
+Breath of the Wild (--game botw; ported from MacNativeGames' copy of this script, MIT): the same, with its own list
+(games/botw/assets/shader_list.tsv) and container formats (Yaz0 instead of Zstandard, no dictionaries), its shaders in
+Pack/ (the boot packages' uking_*.sbfsha and the engine's .sharcb inside System/*.ssarc), Effect/, Event/ and System/,
+the control section's own size (0x7d1 / 0x848, at +0x20) hashed into the key as the runtime does (vk_shader.c
+ctl_key_len), and every shader found translated for the default bind state (all_default).
+
+--vulkan (Android): the translator is started as the device starts it (totk_xlate --service --vulkan, vk_shader_xlate.c)
+and publishes <variant>.spv, <variant>.vk and <key>.vv itself, so the output folder is the device's seed as it is; no
+SPIRV-Cross, no Metal files and no android/vk_reflect.py pass. It needs a translator built from the current sources
+(tools/totk_xlate/publish_native.sh); --keep-spirv is the older route through the Metal files and vk_reflect.py.
 """
 import argparse
 import concurrent.futures
@@ -34,9 +44,12 @@ YAZ0 = b'Yaz0'
 ANSWERS = dict(tex={}, img={}, attr={}, fout={})
 LIST = Path(__file__).resolve().parents[1]/'assets/shader_list.tsv'
 # Per game: the RomFS folders that hold shaders (None: every file), the packages whose shaders are translated for the
-# default bind state (the startup ones), the fewest startup shaders a seed may have.
+# default bind state (the startup ones), the fewest startup shaders a seed may have, and whether every shader found is
+# translated for the default bind state too (all_default), not only the startup ones.
 GAMES = {
-    'totk': dict(folders=None, min_shaders=MIN_SHADERS, list=LIST),
+    'totk': dict(folders=None, min_shaders=MIN_SHADERS, list=LIST, all_default=False),
+    'botw': dict(folders=('Pack/', 'Effect/', 'Event/', 'System/'), min_shaders=2000,
+                 list=Path(__file__).resolve().parents[2]/'botw/assets/shader_list.tsv', all_default=True),
 }
 
 
@@ -45,6 +58,15 @@ def suffix(answers):
 
 
 SUFFIX = suffix(ANSWERS)
+
+
+def answers_for(deps, game='totk'):
+    """The bind state to translate a listed row with: its deps; in Breath of the Wild's list a "*" / "*_depth" slot (any
+    texture kind, vk_shader.c dep_ok) is answered as the plain 2D texture it stands for."""
+    answers = {**ANSWERS, **deps}
+    if game != 'totk':
+        answers['tex'] = {slot: {'*': '2d', '*_depth': '2d_depth'}.get(kind, kind) for slot, kind in answers['tex'].items()}
+    return answers
 
 
 def digest(data):
@@ -119,8 +141,53 @@ def control_key_len(control):
 
 def bound_control(control, game='totk', embedded=True):
     """The control section as the game hands it to NVN: Tears of the Kingdom binds every section as its archive stores
-    it. The key must hash what NVN sees."""
-    return control
+    it. Breath of the Wild rewrites the 0x848-byte sections of the agl programs it loads from embedded BNSH files before
+    binding: a flag at +0x14, the size copies at +0x6f0 and +0x7c8, three words at +0x788..+0x794 and the 24 bytes at
+    +0x7d0; the agl packages' own records (embedded=False) are bound as they are. The key must hash what NVN sees."""
+    if game != 'botw' or not embedded or len(control) != 0x848:
+        return control
+    c = bytearray(control)
+    c[0x14:0x16] = bytes(2); c[0x6f0:0x6f4] = bytes(4); c[0x7c8:0x7cc] = bytes(4); c[0x7d0:0x7e8] = bytes(0x18)
+    c[0x788] = 0; c[0x790] = 0x1c; c[0x794] = 0
+    return bytes(c)
+
+
+def yaz0(data):
+    """Yaz0 (Breath of the Wild's compression): a code byte, then 8 items, a literal byte or a back reference of
+    (distance, length)."""
+    if data[:4] != YAZ0:
+        raise ValueError('expected Yaz0')
+    size = struct.unpack_from('>I', data, 4)[0]
+    if size > 512 << 20:
+        raise ValueError('unbounded Yaz0 file')
+    out, o, i = bytearray(size), 0, 16
+    try:
+        while o < size:
+            code = data[i]; i += 1
+            for bit in (0x80, 0x40, 0x20, 0x10, 8, 4, 2, 1):
+                if o >= size:
+                    break
+                if code & bit:
+                    out[o] = data[i]; o += 1; i += 1
+                    continue
+                first = data[i]; dist = ((first & 0xF) << 8 | data[i+1]) + 1; length = first >> 4; i += 2
+                if length:
+                    length += 2
+                else:
+                    length = data[i] + 0x12; i += 1
+                length = min(length, size - o)
+                src = o - dist
+                if src < 0:
+                    raise ValueError('Yaz0 back reference before the start')
+                if dist >= length:
+                    out[o:o+length] = out[src:src+length]
+                else:
+                    for k in range(length):
+                        out[o+k] = out[src+k]
+                o += length
+    except IndexError:
+        raise ValueError('truncated Yaz0 file') from None
+    return bytes(out)
 
 
 def sarc(data):
@@ -224,13 +291,19 @@ def sharcb_shaders(data, game='totk'):
 
 
 def startup_package(name, game='totk'):
-    """The packages the startup shaders come from; effects and UI layouts carry more."""
+    """The packages the startup shaders come from; effects and UI layouts carry more. Breath of the Wild: the boot and
+    title packages (the materials, terrain, trees, grass and the engine's own shaders) and the System/ ones."""
+    if game == 'botw':
+        return name in ('Pack/Bootup.pack', 'Pack/Bootup_Graphics.pack', 'Pack/TitleBG.pack') or name.startswith('System/')
     return (name == 'Lib/NintendoSDK/TextureShader.bnsh' or name == 'Pack/Bootup.Nin_NX_NVN.pack.zs' or
             name.startswith('Shader/') and name.endswith('.zs'))
 
 
 def decoder(romfs, read, game='totk'):
-    """decode(raw) -> the file's content: Zstandard with the game's dictionaries; other data unchanged."""
+    """decode(raw) -> the file's content: Zstandard with the game's dictionaries (Tears of the Kingdom), Yaz0 (Breath of
+    the Wild); other data unchanged."""
+    if game == 'botw':
+        return lambda raw: yaz0(raw) if raw[:4] == YAZ0 else raw
     import compression.zstd as zstd
     dictionaries = {}
     for raw in sarc(zstd.decompress(read('Pack/ZsDic.pack.zs'))).values():
@@ -367,14 +440,15 @@ def source_reader(romfs, modules, game='totk'):
     return read
 
 
-def plan(shaders, startup, listed):
-    """Translation jobs (key, answers, variant, why): the default bind state for every startup shader, then each bind
-    state the shared list names for a shader found in this game ('listed'). Listed states the default already produced
-    are dropped after translation (prepare), since only the translator knows a shader's deps."""
-    jobs = [(key, ANSWERS, key+'-'+SUFFIX, 'default') for key in sorted(startup)]
+def plan(shaders, startup, listed, all_default=False, game='totk'):
+    """Translation jobs (key, answers, variant, why): the default bind state for every startup shader (every shader found
+    with all_default), then each bind state the shared list names for a shader found in this game ('listed'). Listed
+    states the default already produced are dropped after translation (prepare), since only the translator knows a
+    shader's deps."""
+    jobs = [(key, ANSWERS, key+'-'+SUFFIX, 'default') for key in sorted(shaders if all_default else startup)]
     for key, deps in sorted(listed):
         if key in shaders:
-            answers = {**ANSWERS, **json.loads(deps)}
+            answers = answers_for(json.loads(deps), game)
             jobs.append((key, answers, key+'-'+suffix(answers), 'listed'))
     return jobs
 
@@ -457,31 +531,53 @@ def validate_spirv_stage(data, stage):
         raise ValueError(f'prepared shader stage mismatch: requested {stage}, SPIR-V execution models {models}')
 
 
+def vulkan_row(staging, key, variant):
+    """The dependencies the translator advertised a variant with in <key>.vv (Service.cs PublishVulkan), or None."""
+    index = staging/(key+'.vv')
+    for row in index.read_text().splitlines() if index.is_file() else ():
+        name, tab, flat = row.partition('\t')
+        if tab and name == variant:
+            return flat
+    return None
+
+
 def prepare(romfs, output, translator, spirv_cross, version, shader_list=None, modules=None, game='totk', keep_spirv=False,
-            retain_vulkan_seed=None):
+            retain_vulkan_seed=None, vulkan=False):
     shader_list = shader_list or GAMES[game]['list']
     min_shaders = GAMES[game]['min_shaders']
     shared = ShaderList.load(shader_list)
     listed = shared.variants
     retained = retained_vulkan_requests(retain_vulkan_seed)
-    if retained and not keep_spirv:
-        raise ValueError('retaining Vulkan variants requires --keep-spirv')
+    if retained and not (keep_spirv or vulkan):
+        raise ValueError('retaining Vulkan variants requires --keep-spirv or --vulkan')
+    if vulkan and keep_spirv:
+        raise ValueError('--vulkan and --keep-spirv are two routes to the Vulkan seed: choose one')
+    if not vulkan and spirv_cross is None:
+        raise ValueError('--spirv-cross is required without --vulkan')
     identity = dict(schema=1, chain=CHAIN, version=version, game=game,
                     source_romfs_sha256=json.loads((romfs/'index.json').read_text())['romfs_sha256'],
                     translator_sha256=digest(translator.read_bytes()),
                     gather_bias=os.environ.get('TOTK_GATHER_BIAS') != '0',
                     early_fragment_tests_policy=EARLY_FRAGMENT_TESTS_POLICY,
-                    spirv_cross_sha256=digest(spirv_cross.read_bytes()),
+                    spirv_cross_sha256=digest(spirv_cross.read_bytes()) if spirv_cross else None,
                     preparation_sha256=digest(Path(__file__).read_bytes()),
                     shader_list_sha256=digest(Path(shader_list).read_bytes()) if Path(shader_list).is_file() else None)
     if keep_spirv:   # Android (android/build_android.py): the Vulkan SPIR-V and its resource list stay next to the MSL
         identity['spirv'] = True
     if retain_vulkan_seed is not None:
         identity['retained_vulkan_sha256'] = digest(json.dumps(retained, sort_keys=True, separators=(',', ':')).encode())
-    kept = ('_b.metal', '_b.json', '.spv', '.res.json') if keep_spirv else ('_b.metal', '_b.json')
+    if vulkan:   # the device's own files, published by the translator (totk_xlate --service --vulkan)
+        identity['vulkan'] = True
+    kept = ('.spv', '.vk') if vulkan else ('_b.metal', '_b.json', '.spv', '.res.json') if keep_spirv else ('_b.metal', '_b.json')
+    index_suffix = '.vv' if vulkan else '.variants'
+    stage_number = {'vs': 0, 'ps': 1, 'cs': 5}
     old = reusable_seed(output, identity, min_shaders)
     if old is not None:
-        if keep_spirv:
+        if vulkan:
+            for path in sorted(output.glob('*.spv')):
+                lines = path.with_suffix('.vk').read_text().splitlines()
+                validate_spirv_stage(path.read_bytes(), {'0': 'vs', '1': 'ps', '5': 'cs'}[lines[1][-1]])
+        elif keep_spirv:
             for path in sorted(output.glob('*.spv')):
                 reflection = json.loads(path.with_name(path.stem+'_b.json').read_text())
                 validate_spirv_stage(path.read_bytes(), reflection['stage'])
@@ -495,7 +591,7 @@ def prepare(romfs, output, translator, spirv_cross, version, shader_list=None, m
     extra = located({where for where in shared.locators if where[0] not in shaders}, source_reader(romfs, modules, game), game)
     shaders.update(extra)
     print(f'{len(extra)} more shaders read where the shared list locates them (agl .sharcb, game module)', flush=True)
-    jobs = plan(shaders, startup, listed)
+    jobs = plan(shaders, startup, listed, GAMES[game]['all_default'], game)
     scheduled = {variant for _, _, variant, _ in jobs}
     retained_names = {variant for variant, request in retained.items() if request['key'] in shaders}
     for variant in sorted(retained_names):
@@ -520,7 +616,7 @@ def prepare(romfs, output, translator, spirv_cross, version, shader_list=None, m
     started = time.monotonic()
 
     def worker():
-        process = subprocess.Popen([str(translator), '--service', '--spirv-cross', str(spirv_cross),
+        process = subprocess.Popen([str(translator), '--service', *(['--vulkan'] if vulkan else ['--spirv-cross', str(spirv_cross)]),
                                     '--out', str(staging), '--chain', CHAIN],
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
         try:
@@ -562,20 +658,32 @@ def prepare(romfs, output, translator, spirv_cross, version, shader_list=None, m
                         raise ValueError(f'prepared shader stage mismatch for {variant}: {reply.get("error")}')
                     code_path.unlink()
                     if reply.get('ok'):
-                        refl = json.loads((staging/(variant+'_b.json')).read_text())
-                        if refl['chain'] != CHAIN or refl['stage'] != stage:
-                            raise ValueError('prepared shader identity mismatch')
-                        if keep_spirv:
+                        if vulkan:
+                            deps = vulkan_row(staging, key, variant)   # the flat dependencies of the variant's .vv row
+                            lines = (staging/(variant+'.vk')).read_text().splitlines()
+                            if deps is None or lines[:2] != ['vk 1', f'stage {stage_number[stage]}']:
+                                raise ValueError(f'prepared shader identity mismatch: {variant}')
+                        else:
+                            refl = json.loads((staging/(variant+'_b.json')).read_text())
+                            if refl['chain'] != CHAIN or refl['stage'] != stage:
+                                raise ValueError('prepared shader identity mismatch')
+                            deps = json.dumps(refl['deps'], sort_keys=True, separators=(',', ':'))
+                        if keep_spirv or vulkan:
                             validate_spirv_stage((staging/(variant+'.spv')).read_bytes(), stage)
-                        deps = json.dumps(refl['deps'], sort_keys=True, separators=(',', ':'))
-                        if deps in mine and variant not in retained_names:
+                        duplicate = deps in mine and variant not in retained_names
+                        if duplicate:
                             for suffix_ in kept:
                                 (staging/(variant+suffix_)).unlink(missing_ok=True)
+                        else:
+                            mine.setdefault(deps, variant)
+                            variants[variant] = deps
+                        if vulkan:   # the index as the runtime reads it (vk_shader.c variants_of): the kept variants only
+                            (staging/(key+'.vv')).write_text(''.join(f'{v}\t{d}\n' for v, d in variants.items()))
+                        if duplicate:
                             continue
-                        mine.setdefault(deps, variant)
-                        variants[variant] = deps
-                        (staging/(key+'.variants')).write_text(json.dumps([dict(variant=v, deps=json.loads(d)) for v, d in
-                                                                           variants.items()], separators=(',', ':'))+'\n')
+                        if not vulkan:
+                            (staging/(key+'.variants')).write_text(json.dumps([dict(variant=v, deps=json.loads(d)) for v, d in
+                                                                               variants.items()], separators=(',', ':'))+'\n')
                         rows = [f'S\t{variant}_b\t'+str({'vs': 0, 'ps': 1, 'cs': 5}[stage])]
                         if stage == 'cs':
                             rows.append(f'C\t{variant}_b')
@@ -617,13 +725,14 @@ def prepare(romfs, output, translator, spirv_cross, version, shader_list=None, m
     # behind before publishing reflection; those must not become cached shaders.
     wanted = set()
     for variant in completed:
-        wanted.update([variant+suffix_ for suffix_ in kept] + [variant.split('-')[0]+'.variants'])
+        wanted.update([variant+suffix_ for suffix_ in kept] + [variant.split('-')[0]+index_suffix])
     for p in staging.iterdir():
         if p.name not in wanted:
             p.unlink(missing_ok=True)
     scope = shader_key_scope(shaders, version, identity['source_romfs_sha256'])
     (staging/'shader-keys.json').write_text(json.dumps(scope, separators=(',', ':'))+'\n')
-    (staging/'pso_manifest.tsv').write_text('# Prepared from this app\'s local game data; '+CHAIN+'\n'+'\n'.join(rows)+'\n')
+    if not vulkan:   # the Metal warm-up rows: the Vulkan runtime reads the .vv indexes
+        (staging/'pso_manifest.tsv').write_text('# Prepared from this app\'s local game data; '+CHAIN+'\n'+'\n'.join(rows)+'\n')
     # On filesystems without native extended-attribute support (exFAT, FAT32), macOS can
     # transparently create "._name" AppleDouble sidecar files for anything written here,
     # including pso_manifest.tsv itself. Exclude them so the manifest's own file list never
@@ -647,19 +756,24 @@ def prepare(romfs, output, translator, spirv_cross, version, shader_list=None, m
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    for name in ['romfs', 'output', 'translator', 'spirv-cross']:
+    for name in ['romfs', 'output', 'translator']:
         p.add_argument('--'+name, type=Path, required=True)
+    p.add_argument('--spirv-cross', type=Path, help='SPIRV-Cross (required without --vulkan)')
     p.add_argument('--version', required=True)
     p.add_argument('--shader-list', type=Path, help='the shared shader list (default: the game\'s, assets/shader_list.tsv)')
     p.add_argument('--modules', type=Path, help='rewritten/<version>: the game module images the list locates shaders in')
-    p.add_argument('--game', choices=sorted(GAMES), default='totk', help='totk (default): the game the RomFS belongs to')
+    p.add_argument('--game', choices=sorted(GAMES), default='totk', help='totk (default) or botw: the game the RomFS belongs to')
+    p.add_argument('--vulkan', action='store_true',
+                   help='write the device\'s seed directly (<variant>.spv/.vk, <key>.vv) with totk_xlate --service --vulkan')
     p.add_argument('--keep-spirv', action='store_true', help='also keep each variant\'s SPIR-V and resource list (Android / Vulkan)')
     p.add_argument('--retain-vulkan-seed', type=Path,
                    help='retranslate exact names/deps from an existing loose Vulkan seed for this game inventory')
     a = p.parse_args()
-    prepare(a.romfs.resolve(), a.output.resolve(), a.translator.resolve(), a.spirv_cross.resolve(), a.version,
-            a.shader_list.resolve() if a.shader_list else None, a.modules.resolve() if a.modules else None, a.game, a.keep_spirv,
-            a.retain_vulkan_seed.resolve() if a.retain_vulkan_seed else None)
+    if not a.vulkan and not a.spirv_cross:
+        p.error('--spirv-cross is required without --vulkan')
+    prepare(a.romfs.resolve(), a.output.resolve(), a.translator.resolve(), a.spirv_cross.resolve() if a.spirv_cross else None,
+            a.version, a.shader_list.resolve() if a.shader_list else None, a.modules.resolve() if a.modules else None, a.game,
+            a.keep_spirv, a.retain_vulkan_seed.resolve() if a.retain_vulkan_seed else None, a.vulkan)
 
 
 if __name__ == '__main__':

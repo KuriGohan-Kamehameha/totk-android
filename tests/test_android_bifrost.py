@@ -632,6 +632,22 @@ class AndroidBifrostTests(unittest.TestCase):
         published = ''.join((modules / f).read_text() for f in ('botw_states.h', 'botw_heal_advisor.h', '01007EF00011E000.cpp'))
         for name in names:
             self.assertIn(name, published)
+        # Tears of the Kingdom's table (the same header, picked by title at run time): its names, in the order
+        # duo_state_fill_totk reads them, are ones the vendored Tears of the Kingdom module publishes as integers.
+        totk = header.split('#define DUO_TOTK_STATE_NAMES', 1)[1].split('\n', 1)[0]
+        totk = [n.strip().strip('"') for n in totk.split(',') if n.strip()]
+        self.assertEqual(totk, ['totk.status', 'totk.state.menu_open', 'totk.state.life', 'totk.state.max_life'])
+        order = header.split('enum { DUO_TOTK_STATUS', 1)[1].split('}', 1)[0]
+        self.assertEqual(['DUO_TOTK_STATUS'] + [n.strip() for n in order.split(',') if n.strip()],
+                         ['DUO_TOTK_STATUS', 'DUO_TOTK_MENU_OPEN', 'DUO_TOTK_LIFE', 'DUO_TOTK_MAX_LIFE', 'DUO_TOTK_VALUES'])
+        module = (modules / '0100F2C0115B6000.cpp').read_text()
+        for name in totk:
+            self.assertIn(f'I64("{name}",', module)
+        # The host keeps the running title's names only (duo_host.cpp LedTap through duo_state_table).
+        host = (ROOT / 'games/totk/duo/duo_host.cpp').read_text()
+        self.assertIn('g_led_table = duo_state_table(port->title_id);', host)
+        self.assertIn('duo_state_index(g_led_table, name)', host)
+        self.assertNotIn('strncmp(name, "botw.", 5)', host)
 
     def test_manifest_asks_for_bifrost_only(self):
         import importlib.util

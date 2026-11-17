@@ -23,10 +23,14 @@ bool TakeFrame(std::vector<uint32_t>& pixels, uint32_t& width, uint32_t& height,
 void BlitFrame(uint32_t* out, uint32_t out_w, uint32_t out_h, uint32_t stride, const std::vector<uint32_t>& pixels,
                uint32_t width, uint32_t height);
 uint64_t Ticks();
+/// One finger down at (x, y) in surface pixels, or every finger lifted (down false): the test's taps, which reach the
+/// runtime as DuoSurfaceView's do (the Android path is DuoSurfaceView.nativeTouch, off unless TOTK_DUO_TOUCH=1).
+void TestTouch(uint32_t x, uint32_t y, bool down);
 
 // A few of the title module's published numbers become the second screen's common game state
-// (runtime/companion_state.h; duo_state.h says which and how): whether a save is running, whether the game's menu is
-// up, whether the Sheikah Slate is owned, the hearts. The app's shell and its stick-LED bridge read it from the port.
+// (runtime/companion_state.h; duo_state.h says which and how, per title): whether a save is running, whether the
+// game's menu is up, whether the tablet is owned, the hearts. The app's shell and its stick-LED bridge read it from
+// the port.
 /// Tick thread, from the module's publish_i64 while it samples: remembers `name` if it is one of them.
 void LedTap(const char* name, int64_t value);
 /// Tick thread, when that sample is complete: the remembered values go to the port as one state (DuoPort.state).

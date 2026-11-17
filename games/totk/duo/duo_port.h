@@ -1,7 +1,8 @@
 /* The one interface between the port's runtime (libtotk.so, C) and the Eden Duo companion host (libduo_host.so, C++,
    GPL-3.0-or-later). libtotk fills a DuoPort and hands it to duo_host_start; the host never calls into libtotk any
    other way and libtotk calls nothing else in the host. Both sides check `abi` and `size`, so a library from another
-   build is refused instead of misread.
+   build is refused instead of misread. The table only grows: a new service (the next is the route for a module's item
+   actions to the runtime's companion_actions.c) is appended after `state`, and DUO_PORT_ABI is raised with it.
 
    This header is part of the port (MIT, like the runtime): it describes services, it contains no Eden Duo code. */
 #pragma once

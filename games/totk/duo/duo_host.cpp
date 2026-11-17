@@ -6,7 +6,8 @@
 //     1. the facts first, each on its own log line: title, build id, where main is and how large, whether main reads;
 //     2. the package: <package_root>/<name>/dualscreen/manifest.json (the app unpacks it from the APK and writes
 //        <package_root>/.ready last). Found: Eden Duo's ModRuntime is built on it, the real page. Not found, or
-//        TOTK_DUO=module: the Breath of the Wild module alone on a minimal host, its outputs in the log;
+//        TOTK_DUO=module: the game's title module (the one this library was built with: Breath of the Wild's or Tears
+//        of the Kingdom's, CMakeLists.txt DUO_TITLE) alone on a minimal host, its outputs in the log;
 //     3. the tick loop. The game posts one wake per presented frame (duo_host_frame); the loop also wakes 16 ms
 //        after its last tick, so the page keeps its 60 Hz clock while the game renders 30 frames a second and
 //        keeps animating through a loading stall. Nothing of this runs on a game thread.
@@ -25,10 +26,12 @@
 #include <cstdlib>
 #include <cstring>
 #include <format>
+#include <iterator>
 #include <map>
 #include <mutex>
 #include <optional>
 #include <semaphore>
+#include <span>
 #include <string>
 #include <thread>
 #include <variant>
@@ -81,8 +84,8 @@ ANativeWindow* g_window;
 std::atomic<u64> g_posted{0};
 
 // ---- the common game state (duo_host.h LedTap, duo_state.h) --------------------------------------------------------
-constexpr std::array<const char*, DUO_STATE_VALUES> LedNames{DUO_STATE_NAMES};
-std::array<int64_t, DUO_STATE_VALUES> g_led_pending{}; // tick thread only
+const DuoStateTable* g_led_table = nullptr;                // the running title's names (set by duo_host_start)
+std::array<int64_t, DUO_STATE_MAX_VALUES> g_led_pending{}; // tick thread only
 
 bool EnvIs(const char* name, const char* value) {
     const char* const set = std::getenv(name);
@@ -112,23 +115,35 @@ bool ReportGame() {
         return false;
     }
     Say("duo: main+0 reads {:08x} {:08x} {:08x} {:08x}", head[0], head[1], head[2], head[3]);
-    // The two call sites the package's load plan would patch (milestone 3), read only: do they survive the port's
-    // rewriter as the original `bl` words? main+0x1852248 da00e797, main+0xF4109C b5030194 (bytes as stored).
-    static constexpr struct {
+    // Per title: the call sites its package's load plan would patch (milestone 3), read only: do they survive the
+    // port's rewriter as the original `bl` words? And the size of the original main (text + rodata + data), below
+    // which the module's readers refuse the image. Breath of the Wild 1.6.0: main+0x1852248 da00e797,
+    // main+0xF4109C b5030194 (bytes as stored), 0x2D66000. Tears of the Kingdom 1.4.3: no load plan, 0x3A25D60.
+    struct Site {
         u64 offset;
         u32 word;
-    } sites[] = {{0x1852248, 0x97e700da}, {0xF4109C, 0x940103b5}};
-    for (const auto& site : sites) {
+    };
+    static constexpr Site BotwSites[] = {{0x1852248, 0x97e700da}, {0xF4109C, 0x940103b5}};
+    struct Title {
+        u64 title_id;
+        std::span<const Site> sites;
+        u64 original_main;
+    };
+    static constexpr Title Titles[] = {{0x01007EF00011E000, BotwSites, 0x2D66000}, {0x0100F2C0115B6000, {}, 0x3A25D60}};
+    const auto* const title = std::ranges::find(Titles, g_port.title_id, &Title::title_id);
+    if (title == std::end(Titles)) {
+        Say("duo: title {:016X} is not one this host knows; companion off", g_port.title_id);
+        return false;
+    }
+    for (const auto& site : title->sites) {
         u32 found{};
         const bool read = g_port.safe_read(g_port.main_base + site.offset, &found, sizeof found) != 0;
         Say("duo: load-plan site main+{:#x}: {} (original {:08x}, here {:08x}); not patched in this build",
             site.offset, !read ? "unreadable" : found == site.word ? "original" : "differs", site.word, found);
     }
-    // The module's readers refuse an image smaller than the original 1.6.0 main (text + rodata + data).
-    constexpr u64 OriginalMain = 0x2D66000;
-    if (g_port.main_size < OriginalMain) {
+    if (g_port.main_size < title->original_main) {
         Say("duo: main is {:#x} bytes, smaller than the original {:#x}; the module will read nothing",
-            g_port.main_size, OriginalMain);
+            g_port.main_size, title->original_main);
     }
     return true;
 }
@@ -259,12 +274,14 @@ private:
         Say("duo: module-only: tick {}: {} values published, {} changed this tick", ticks, values.size(), changed);
         // The values a player can check against the game's own screen, a few per line. The module publishes
         // thousands (every page widget's text); the rest would only bury these.
+        // Each title module's names (only the running one's appear).
         static constexpr std::string_view watch[] = {
             "botw.state.", "botw.pouch_valid", "botw.pouch_count", "botw.inventory.count", "botw.quest.count",
             "botw.ready.rupees", "botw.ready.heal.life", "botw.ready.heal.max", "botw.ready.stamina.percent",
             "botw.ready.clock.text", "botw.ready.temperature.text", "botw.ready.area", "botw.ready.weapon",
             "botw.ready.bow", "botw.ready.shield", "botw.ready.arrow.count", "botw.ready.shrine_count",
-            "botw.ready.spirit_orbs", "botw.bridge.available"};
+            "botw.ready.spirit_orbs", "botw.bridge.available",
+            "totk.status", "totk.state.", "totk.rupees", "totk.hearts.text", "totk.layer_text", "totk.gear."};
         std::string line;
         for (const auto& [name, value] : values) {
             const bool watched = std::ranges::any_of(watch, [&](std::string_view w) {
@@ -429,24 +446,18 @@ void TickLoop() {
 } // namespace
 
 void LedTap(const char* name, int64_t value) {
-    // Hundreds of values pass here each tick: only "botw.state.*" and "botw.ready.heal.*" are looked at further.
-    if (name == nullptr || std::strncmp(name, "botw.", 5) != 0 || (name[5] != 's' && name[5] != 'r')) {
-        return;
-    }
-    for (size_t i = 0; i < LedNames.size(); ++i) {
-        if (std::strcmp(name, LedNames[i]) == 0) {
-            g_led_pending[i] = value;
-            return;
-        }
+    // Hundreds of values pass here each tick: only the running title's state names (duo_state.h) are kept.
+    if (const int i = duo_state_index(g_led_table, name); i >= 0) {
+        g_led_pending[static_cast<size_t>(i)] = value;
     }
 }
 
 void LedCommit() {
-    if (g_port.state == nullptr) {
+    if (g_port.state == nullptr || g_led_table == nullptr) {
         return;
     }
     CompanionState state;
-    duo_state_fill(g_led_pending.data(), &state);
+    g_led_table->fill(g_led_pending.data(), &state);
     g_port.state(&state);
 }
 
@@ -481,6 +492,16 @@ void BlitFrame(u32* out, u32 out_w, u32 out_h, u32 stride, const std::vector<u32
         }
         std::fill_n(row + rect.x + rect.w, out_w - rect.x - rect.w, 0xFF000000u);
     }
+}
+
+void TestTouch(u32 x, u32 y, bool down) {
+    using VideoCore::DSMod::AuxTouchPoint;
+    if (!down) {
+        g_system->GPU().DSModAux().SetTouch({});
+        return;
+    }
+    const AuxTouchPoint point{.finger_id = 1, .x = x, .y = y, .attributes = 1u, .delta_ns = 0};
+    g_system->GPU().DSModAux().SetTouch(std::span{&point, 1});
 }
 
 bool TakeFrame(std::vector<u32>& pixels, u32& width, u32& height, u64& serial) {
@@ -646,6 +667,7 @@ DUO_EXPORT int duo_host_start(const DuoPort* port) {
     g_data_dir = port->data_dir != nullptr ? port->data_dir : "";
     g_port.package_root = g_package_root.c_str();
     g_port.data_dir = g_data_dir.c_str();
+    g_led_table = duo_state_table(port->title_id);
     SetPort(&g_port);
     Common::Log::verbose.store(EnvIs("TOTK_DUO_DEBUG", "1"));
     g_tick_thread = std::thread{TickLoop};

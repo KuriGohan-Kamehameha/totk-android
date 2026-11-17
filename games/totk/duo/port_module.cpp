@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The title module, linked into this library. Stands in for Eden Duo's mod_module.cpp, which verifies a checksum,
-// stages a .so from the package into a code cache and dlopens it: here the Breath of the Wild module
-// (vendor/companions/native/modules/01007EF00011E000.cpp) is compiled in, so "loading" is the same handshake
-// without a file. The package's manifest still decides: its title id, module ABI and build-id list are checked
-// exactly as Eden checks them, and a package for another build gets the same diagnostic.
+// stages a .so from the package into a code cache and dlopens it: here the game's module (one per library: the Breath
+// of the Wild module vendor/companions/native/modules/01007EF00011E000.cpp or the Tears of the Kingdom module
+// 0100F2C0115B6000.cpp, CMakeLists.txt DUO_TITLE) is compiled in, so "loading" is the same handshake without a file.
+// The package's manifest still decides: its title id, module ABI and build-id list are checked exactly as Eden checks
+// them, and a package for another build gets the same diagnostic.
 
 #include <algorithm>
 #include <cctype>
@@ -122,7 +123,23 @@ std::unique_ptr<GameModule> GameModule::Load(FileSys::VirtualDir assets, u64 tit
             !ext->configure) {
             throw std::runtime_error("incompatible dual-screen module extensions");
         }
-        // The Breath of the Wild module exports no font, save, write, data or texture extension.
+        // The font extension, negotiated as Eden's mod_module.cpp does (NegotiateExtension, not required): absent or a
+        // null answer, no font of the module's own; anything else must match this build's struct exactly. The Tears of
+        // the Kingdom module decodes the game's Rodin font this way; the Breath of the Wild module defines no
+        // eden_dsmod_get_font_extensions (DUO_MODULE_FONT, CMakeLists.txt, says whether the linked module does: the
+        // dlsym of Eden's loader). Neither exports a save, write, data or texture extension.
+#if DUO_MODULE_FONT
+        {
+            const auto* const font =
+                eden_dsmod_get_font_extensions(EDEN_DSMOD_FONT_EXT_VERSION, EDEN_DSMOD_FONT_EXT_HASH);
+            if (font != nullptr &&
+                (font->version != EDEN_DSMOD_FONT_EXT_VERSION || font->struct_size != sizeof(EdenDsmodFontExtensions) ||
+                 font->abi_hash != EDEN_DSMOD_FONT_EXT_HASH || !font->decode_font)) {
+                throw std::runtime_error("incompatible dual-screen font extensions");
+            }
+            loaded->font_extensions = font;
+        }
+#endif
         LOG_INFO(Core, "DSMod module: loaded {} for title {} build {} (built in)",
                  api->name ? api->name : "unnamed", title, build);
         g_module_api = api;

@@ -18,8 +18,8 @@ controller-friendly menu lets you pick graphics presets, controls and saves befo
 
 
 <p align="center">
-  <img src="images/home.webp" width="49%" alt="Home menu">
-  <img src="images/graphics-performance.webp" width="49%" alt="Graphics: Performance tab with presets">
+  <img src="images/totk-home.webp" width="49%" alt="Home menu">
+  <img src="images/totk-graphics.webp" width="49%" alt="Graphics: Performance tab with presets">
   <img src="images/setup-install.webp" width="49%" alt="Setup preparing the game">
   <img src="images/set-render-res.webp" width="49%" alt="A setting with its illustration">
 </p>
@@ -376,7 +376,7 @@ Options: Device language, English, 日本語, Deutsch, Français, Español, Ital
 shaders or the second-screen art, choose another graphics driver (a Turnip AdrenoTools `.zip` or 64-bit ARM `.so`, or
 go back to the bundled one), run setup again (finished steps are kept) or delete the imported data (saves, settings and the driver are kept).
 
-<img src="images/game-data.webp" width="640" alt="Game data">
+<img src="images/totk-gamedata.webp" width="640" alt="Game data">
 
 *About* shows the app and game versions, the build, the detected chip and screens, the licences of every bundled
 component and the project's home.

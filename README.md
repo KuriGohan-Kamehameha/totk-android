@@ -10,6 +10,13 @@ the device's processor, and its graphics are drawn by a bundled Vulkan driver. I
 [TotK Native](https://github.com/AurelioB/totk-android), the native Tears of the Kingdom port, and shares its runtime,
 graphics layer and controller-friendly menu. The app contains **no game files**: you supply your own dump of the game.
 
+<p align="center">
+  <img src="docs/images/botw-home.webp" width="49%" alt="Home menu">
+  <img src="docs/images/botw-graphics.webp" width="49%" alt="Graphics: Performance tab with presets">
+  <img src="docs/images/botw-gamedata.webp" width="49%" alt="Game data: installed game, mods and Lossless Scaling">
+  <img src="docs/images/botw-about.webp" width="49%" alt="About">
+</p>
+
 **Experimental.** BotW Native was developed and tested on one device, an AYN Thor, and has been played through the
 opening, the Great Plateau and the menus. Setup on the device is not ported yet: the game folder is prepared by hand
 (see [Install and first setup](#install-and-first-setup)).
@@ -95,6 +102,8 @@ runs at its own 30 fps on the Great Plateau and in the menus. Measuring it is on
 The menu is the Tears of the Kingdom app's: every option, its explanation and its controls are described in
 [docs/totk-native.md → Settings](docs/totk-native.md#settings). On the menu: **A** changes, **◀ ▶** adjust, **L** /
 **R** switch tabs, **Y** restores the current tab's defaults for your device, **B** goes back, **+** starts the game.
+
+<img src="docs/images/botw-controls.webp" width="640" alt="Controls & audio">
 
 The options were written for Tears of the Kingdom and most are untested with Breath of the Wild. What differs here:
 

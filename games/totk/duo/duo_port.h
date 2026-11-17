@@ -1,8 +1,8 @@
 /* The one interface between the port's runtime (libtotk.so, C) and the Eden Duo companion host (libduo_host.so, C++,
    GPL-3.0-or-later). libtotk fills a DuoPort and hands it to duo_host_start; the host never calls into libtotk any
    other way and libtotk calls nothing else in the host. Both sides check `abi` and `size`, so a library from another
-   build is refused instead of misread. The table only grows: a new service (the next is the route for a module's item
-   actions to the runtime's companion_actions.c) is appended after `state`, and DUO_PORT_ABI is raised with it.
+   build is refused instead of misread. The table only grows: a new service is appended at the end, and DUO_PORT_ABI is
+   raised with it (3: the item actions, after `state`).
 
    This header is part of the port (MIT, like the runtime): it describes services, it contains no Eden Duo code. */
 #pragma once
@@ -15,7 +15,16 @@ extern "C" {
 
 struct CompanionState;             /* runtime/companion_state.h */
 
-#define DUO_PORT_ABI 2u
+#define DUO_PORT_ABI 3u
+
+/* One action the game's menus offer for an item (runtime/companion.h CompanionAction, the same three fields): id is
+   "equip", "unequip", "eat", "drink", "use", "hold", "takeOut" or "fuseArrow"; reason is "" when enabled, otherwise
+   why not. Both strings are static in the runtime. */
+typedef struct DuoPortAction {
+    const char *id;
+    int enabled;
+    const char *reason;
+} DuoPortAction;
 
 typedef struct DuoPort {
     uint32_t abi, size;                 /* DUO_PORT_ABI, sizeof(DuoPort) */
@@ -46,6 +55,28 @@ typedef struct DuoPort {
     /* The second screen's common game state (runtime/companion_state.h), from the host's tick thread each time a
        sample of the game is complete. The port keeps the last one for the app (CompanionNative.state). May be NULL. */
     void (*state)(const struct CompanionState *state);
+    /* ---- ABI 3: item actions ----------------------------------------------------------------------------------------
+       The runtime's own item actions (runtime/companion_actions.c: the game's pouch functions, called on the game's
+       frame-end thread, never from the host) for a title module that offers them (Tears of the Kingdom's). All NULL:
+       the runtime has none (Breath of the Wild, a build without the app's companion) and the page shows every action
+       unavailable. Each may be called from any host thread. A pouch key is the companion snapshot's number (companion.h:
+       0 weapons, 1 bows, 2 shields, 3 arrows, 4 armor, 5 materials, 6 food, 7 zonai, 8 keyItems). */
+    /* The actions (at most 3) the game's menus offer now for the item at (key, slot) of the current pouch partition,
+       by the game's own rules and the game state of the last frame end; 0: none, or the game is not in play. Asking
+       keeps the frame-end refresh of that state running for a few seconds. */
+    unsigned (*item_actions)(int key, int slot, DuoPortAction out[3]);
+    /* Whether actions may run now (*ok), and if not why ("menu", "event", "loading", "saving", "stale", ...). */
+    void (*action_state)(int *ok, const char **reason);
+    /* The generation of the current pouch partition (bumped whenever anything in it changes); 0: not in play. */
+    long long (*pouch_gen)(void);
+    /* Queues one item action for the game's next frame end (companion_request): seq > 0, or -1 busy (one is pending
+       or the game is paused), -2 refused now, -3 unsupported (another game build, the companion off), -4 invalid.
+       category is the pouch key's name ("weapons", ...); actor, partition and pouch_gen name the item as it was chosen. */
+    int (*request)(const char *action, const char *category, int slot, const char *actor, int partition,
+                   long long pouch_gen);
+    /* The latest request as {"seq":n,"state":"pending|done|refused|failed","reason":"..."} in out (NUL-terminated);
+       its length, or 0 for any other seq or when it does not fit in cap. */
+    size_t (*result)(int seq, char *out, size_t cap);
 } DuoPort;
 
 /* package_root is being filled by someone else (the app unpacking its APK): wait for <package_root>/.ready. */

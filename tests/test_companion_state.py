@@ -209,6 +209,30 @@ class CompanionStateTests(unittest.TestCase):
                 continue
             self.assertNotIn('Duo', code, path.name)
 
+    def test_item_actions_reach_the_page_only_through_the_runtime(self):
+        # DuoPort ABI 3: the runtime's own item actions (companion_actions.c) are the only route. The MIT side fills
+        # five plain C functions for Tears of the Kingdom only; the GPL port forwards the module's port-only table to
+        # them; the module itself never writes guest memory or calls game code.
+        port_h = (TOTK / 'duo/duo_port.h').read_text()
+        self.assertIn('#define DUO_PORT_ABI 3u', port_h)
+        fields = re.findall(r'\(\*(\w+)\)\(', port_h.split('typedef struct DuoPort {', 1)[1].split('} DuoPort;', 1)[0])
+        self.assertEqual(fields[-6:], ['state', 'item_actions', 'action_state', 'pouch_gen', 'request', 'result'])
+        port_c = (TOTK / 'runtime/duo_port.c').read_text()
+        self.assertIn('#define DUO_ITEM_ACTIONS 0', port_c.split('#else', 1)[0])            # Breath of the Wild: none
+        self.assertIn('#define DUO_ITEM_ACTIONS 1', port_c.split('#ifdef GAME_BOTW', 1)[1].split('#endif', 1)[0])
+        for name in ('item_actions', 'action_state', 'pouch_gen', 'item_request', 'item_result'):
+            self.assertRegex(port_c, rf'runtime_companion_{name}\([^;]*\) __attribute__\(\(weak\)\);')
+        jni = (TOTK / 'runtime/companion_jni.c').read_text()
+        self.assertIn('return companion_request((uintptr_t)runtime_module_base("main"), action, category, slot, actor, '
+                      'partition, pouch_gen);', jni)
+        self.assertIn('static void actions_ready(void) { pthread_once(&actions_once, actions_init); }', jni)
+        module_port = (TOTK / 'duo/port_module.cpp').read_text()
+        self.assertIn('totk_native_port_bind_actions(instance, offered ? &g_native_actions : nullptr);', module_port)
+        module = (TOTK / 'duo/vendor/companions/native/modules/0100F2C0115B6000.cpp').read_text()
+        for forbidden in ('write_memory', 'queue_guest_call', 'write_batch'):
+            self.assertNotIn(forbidden, module)
+        self.assertIn('return refuse("notAvailableYet");   // Eden Duo: nothing is ever requested', module)
+
     def test_vendored_reader_is_the_runtime_reader(self):
         # The Tears of the Kingdom module reads the game with this runtime's reader, compiled unchanged: while both copies
         # exist they are the same bytes, so a fix lands in both (duo/vendor/README.md).

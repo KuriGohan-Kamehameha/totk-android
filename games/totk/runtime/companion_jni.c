@@ -19,6 +19,9 @@
                                            (companion_state()), Breath of the Wild has none. The one getter the stick
                                            LEDs and the shell both use.
      void nativePage(int page)          -> the page the Java screen shows, for that state's page field
+   The same item actions also serve the Eden Duo companion page: runtime_companion_item_* below, which duo_port.c hands
+   to libduo_host.so (the DuoPort table, ABI 3) for Tears of the Kingdom's title module. They install the frame-end hook
+   themselves, so the requests run whether or not the Java companion class was ever loaded.
    With TOTK_COMPANION=0 every game-facing entry point returns its "off" value without inspecting the game. */
 #include "companion.h"
 #include "autoload.h"
@@ -103,11 +106,13 @@ static int game_write(uint64_t a, const void *src, size_t n) {
 static uint64_t now_ms(void) { return runtime_now_ns() / 1000000u; }
 static void set_pending(int on) { atomic_store_explicit(&runtime_companion_pending, on, memory_order_release); }
 static void frame_end_tick(uint64_t frame) { companion_tick((uintptr_t)runtime_module_base("main"), frame); }
-static void actions_init(void) {   /* JNI_OnLoad: before any snapshot or request */
+static void actions_init(void) {   /* once: JNI_OnLoad or the first Eden Duo call, before any snapshot or request */
     static const CompanionEnv env = {guest_read, game_call, game_call_f, game_write, runtime_fs_save_busy, now_ms, set_pending};
     companion_actions_init(&env);
     atomic_store_explicit(&runtime_companion_tick, frame_end_tick, memory_order_release);
 }
+static pthread_once_t actions_once = PTHREAD_ONCE_INIT;
+static void actions_ready(void) { pthread_once(&actions_once, actions_init); }
 
 static jint JNICALL native_request(JNIEnv *env, jclass cls, jstring action, jstring category, jint slot, jstring actor,
                                    jint partition, jlong pouch_gen) {
@@ -129,6 +134,55 @@ static jstring JNICALL native_result(JNIEnv *env, jclass cls, jint seq) {
     jstring r = companion_result(seq, &b) ? (*env)->NewStringUTF(env, b.data) : NULL;
     free(b.data);
     return r;
+}
+
+/* ---------- the Eden Duo companion's item actions (duo_port.c: DuoPort ABI 3) ----------
+   The route CompanionNative.request / result take, for the title module of the Eden Duo page: the same rules
+   (companion_item_actions on a fresh view of the item), the same gate (TOTK_COMPANION, the paused game), the same
+   single request at a time, carried out by the same frame-end tick. Called from the companion host's threads. */
+unsigned runtime_companion_item_actions(int key, int slot, CompanionAction out[3]);
+void runtime_companion_action_state(int *ok, const char **reason);
+long long runtime_companion_pouch_gen(void);
+int runtime_companion_item_request(const char *action, const char *category, int slot, const char *actor, int partition,
+                                   long long pouch_gen);
+size_t runtime_companion_item_result(int seq, char *out, size_t cap);
+
+unsigned runtime_companion_item_actions(int key, int slot, CompanionAction out[3]) {
+    if (!native_enabled(NULL, NULL)) return 0;
+    actions_ready();
+    CompanionView v;
+    if (!companion_view((uintptr_t)runtime_module_base("main"), guest_read, key, slot, &v)) return 0;
+    return companion_item_actions(key, &v, out);   /* also keeps the frame-end refresh running (watch) */
+}
+void runtime_companion_action_state(int *ok, const char **reason) {
+    *ok = 0; *reason = "unsupported";
+    if (!native_enabled(NULL, NULL)) return;
+    actions_ready();
+    int pause_menu, aiming;
+    companion_action_state(ok, reason, &pause_menu, &aiming);
+}
+long long runtime_companion_pouch_gen(void) {
+    if (!native_enabled(NULL, NULL)) return 0;
+    CompanionView v;
+    companion_view((uintptr_t)runtime_module_base("main"), guest_read, -1, 0, &v);
+    return v.ident ? companion_pouch_gen(v.ident) : 0;
+}
+int runtime_companion_item_request(const char *action, const char *category, int slot, const char *actor, int partition,
+                                   long long pouch_gen) {
+    if (!native_enabled(NULL, NULL)) return COMPANION_UNSUPPORTED;
+    if (runtime_android_game_paused()) return COMPANION_BUSY;
+    if (!action || !category || !actor) return COMPANION_INVALID;
+    actions_ready();
+    return companion_request((uintptr_t)runtime_module_base("main"), action, category, slot, actor, partition, pouch_gen);
+}
+size_t runtime_companion_item_result(int seq, char *out, size_t cap) {
+    if (!native_enabled(NULL, NULL) || !out || !cap) return 0;
+    CompanionBuf b = {0};
+    size_t n = companion_result(seq, &b);
+    if (n && n < cap) memcpy(out, b.data, n + 1);
+    else n = 0;
+    free(b.data);
+    return n;
 }
 
 /* TOTK_COMPANION_LOG=1: log every status change and, once a save is loaded, one full snapshot (for checking a new
@@ -240,7 +294,7 @@ __attribute__((visibility("default"))) jint JNI_OnLoad(JavaVM *vm, void *reserve
     };
     if ((*env)->RegisterNatives(env, cls, methods, sizeof methods / sizeof *methods)) {
         (*env)->ExceptionClear(env); fprintf(stderr, "[companion] RegisterNatives failed\n");
-    } else actions_init();
+    } else actions_ready();
     cls = (*env)->FindClass(env, "com/aure/totk/TotkActivity");
     if (cls) {
         static const JNINativeMethod present_methods[] = {

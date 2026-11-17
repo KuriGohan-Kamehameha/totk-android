@@ -210,7 +210,7 @@ unchanged (`D/vendor/companions/native/modules/totk_reader/`, byte for byte `R/c
 | E-R01 | status, menu, life, max life | the module's `Publish` (`M/0100F2C0115B6000.cpp`) from the reader's snapshot | `totk.status`, `totk.state.{menu_open,life,max_life}` → `D/duo_state.h` `duo_state_fill_totk` (the TotK adapter) |
 | E-X01 | state words to the app | `D/duo_host.cpp` `LedTap` / `LedCommit` (the running title's table, `duo_state_table`) → `R/duo_port.c` `port_state` | `R/companion_jni.c` `native_state`: the host's sample first; before it, or without the host, `companion_state()` as in 2a (T-X02) |
 | E-X02 | page | the package's own pages (`page_binds` on `totk.status`) | the native page keeps its own, as for BotW |
-| E-A01 | item actions | none yet: the module is read-only | a later step routes them to `R/companion_actions.c` through `D/duo_port.h` (DuoPort ABI 3) |
+| E-A01 | item actions | the module's `PublishActions` / `Action` (`M/0100F2C0115B6000.cpp`), through its port-only table `M/totk_native_actions.h`, bound by `D/port_module.cpp` at configure time | `D/duo_port.h` ABI 3 (`item_actions`, `action_state`, `pouch_gen`, `request`, `result`) → `R/duo_port.c` → `R/companion_jni.c` `runtime_companion_item_*` → `R/companion_actions.c` (rules, gate, one request at a time, frame-end calls; the same as T-A*). Without the table (Eden Duo) every action is shown disabled, `notAvailableYet` |
 
 ## 3. Commonality map and ledger
 

@@ -1491,8 +1491,12 @@ Kingdom Eden Duo page, drawn by `libduo_host.so` into `DuoSurfaceView`, exactly 
 P1R4N351/eden-duo-companions, `games/totk/duo/vendor/README.md`), started by `runtime/duo_port.c` from the game's
 frame end and reading the game through this app's own MIT reader (`companion_snapshot.c`, compiled into the module
 unchanged). The page is Breath of the Wild's Ready page with Tears of the Kingdom's values, plus TotK's Inventory and
-Map; it is read-only (item actions come in a later step, through the port's interface) and touch is off unless
-`TOTK_DUO_TOUCH=1`, as for Breath of the Wild. `TOTK_DUO=0` turns it off, `TOTK_DUO=module` logs the module's values
+Map. Item actions are on the page's Inventory detail and on a quick picker the Ready page's gear corners open: the
+module shows the actions this runtime offers for the selected item and forwards a tap through `duo/duo_port.h` (ABI 3)
+to `runtime/companion_actions.c`, which re-checks and runs it on the game's frame end exactly as for the earlier
+companion (the rules, the gate, one request at a time and the device evidence below are unchanged); the page shows
+pending, done, refused or failed. The library calls no game code itself. Touch is off unless `TOTK_DUO_TOUCH=1`, as
+for Breath of the Wild, so the actions need that setting until touch is on by default. `TOTK_DUO=0` turns it off, `TOTK_DUO=module` logs the module's values
 instead. The stick LEDs and the shell take the common state from the host's samples (`duo/duo_state.h`, Tears of the
 Kingdom's table) and, until the host has one or without it, from `companion_state()` as before. The setup no longer
 offers, builds or updates the second-screen art (`ArtPolicy.used`); the art stage and its generator stay in the source.

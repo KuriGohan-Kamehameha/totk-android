@@ -225,7 +225,7 @@ release_asset = "BotW-Native-"
 "games/totk/runtime/companion_jni.c" = { n = 1, vars = ["runtime_code"] }
 "games/totk/runtime/companion_snapshot.c" = { n = 1, vars = ["runtime_code"] }
 "games/totk/runtime/drs_framegen.h" = { n = 1, vars = ["runtime_code"] }
-"games/totk/runtime/duo_port.c" = { n = 1, vars = ["title_id"] }
+"games/totk/runtime/duo_port.c" = { n = 1, vars = ["title_id", "runtime_code"] }
 "games/totk/runtime/fps_adaptive_runtime.c" = { n = 1, vars = ["runtime_code"] }
 "games/totk/runtime/fps_hybrid_runtime.c" = { n = 1, vars = ["runtime_code"] }
 "games/totk/runtime/frontend.m" = { n = 2, vars = ["runtime_code"] }

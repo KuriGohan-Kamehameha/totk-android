@@ -12,11 +12,15 @@
 // command bar, and each is written as <out_prefix>-<page>.png. The PNGs show art decoded from the player's own files:
 // they stay on the machine that ran the test.
 //   scene: ready (default), menu (pause menu open), event (cutscene), sky, depths, title, food (low hearts), loading,
-//          overlays (the pause-menu band on Inventory and Map)
+//          overlays (the pause-menu band on Inventory and Map),
+//          actions (item actions through a fake runtime: DuoPort ABI 3 functions standing in for companion_actions.c),
+//          actions-off (the same taps with no action functions, as in Eden Duo: every action shown disabled)
 // Besides the pages, the common state the host hands to the port (duo_state.h, Tears of the Kingdom's table) is
 // checked against the fixture: status, in game, menu and hearts.
+#include <atomic>
 #include <chrono>
 #include <cmath>
+#include <mutex>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -77,6 +81,54 @@ int64_t RomfsRead(const char* path, uint64_t offset, void* out, uint64_t n) {
     return got;
 }
 int64_t NoAoc(const char*, uint64_t, void*, uint64_t) { return -1; }
+
+// ---------- a fake runtime's item actions (DuoPort ABI 3; the app's are runtime/companion_actions.c) ----------
+// Rules: gear equips (unequips the equipped one), food eats, materials eat / take out (fuse disabled: not aiming).
+// A request is pending for its first PendingPolls result calls, then done; one at a time, as the runtime's.
+struct FakeRequest { std::string action, category, actor; int slot, partition; long long gen; };
+std::mutex g_fake_mutex;
+std::vector<FakeRequest> g_requests;
+int g_seq = 0, g_polls = 0;
+bool g_pending = false;
+constexpr int PendingPolls = 40;
+constexpr long long FakeGen = 7;
+unsigned FakeItemActions(int key, int slot, DuoPortAction out[3]) {
+    switch (key) {
+    case 0: case 1: case 2: case 4:
+        out[0] = {slot == 0 ? "unequip" : "equip", 1, ""};
+        return 1;
+    case 6:
+        out[0] = {"eat", 1, ""};
+        return 1;
+    case 5:
+        out[0] = {"eat", 1, ""};
+        out[1] = {"takeOut", 1, ""};
+        out[2] = {"fuseArrow", 0, "notAiming"};
+        return 3;
+    default:
+        return 0;
+    }
+}
+void FakeActionState(int* ok, const char** reason) { *ok = 1; *reason = ""; }
+long long FakePouchGen() { return FakeGen; }
+int FakeRequestOne(const char* action, const char* category, int slot, const char* actor, int partition, long long gen) {
+    std::scoped_lock lock{g_fake_mutex};
+    if (g_pending) return -1;
+    g_requests.push_back({action, category, actor, slot, partition, gen});
+    g_pending = true;
+    g_polls = 0;
+    return ++g_seq;
+}
+size_t FakeResult(int seq, char* out, size_t cap) {
+    std::scoped_lock lock{g_fake_mutex};
+    if (seq != g_seq || seq <= 0) return 0;
+    const bool done = !g_pending || ++g_polls > PendingPolls;
+    if (done) g_pending = false;
+    const int n = std::snprintf(out, cap, "{\"seq\":%d,\"state\":\"%s\",\"reason\":\"\"}", seq, done ? "done" : "pending");
+    return n > 0 && static_cast<size_t>(n) < cap ? static_cast<size_t>(n) : 0;
+}
+size_t Requests() { std::scoped_lock lock{g_fake_mutex}; return g_requests.size(); }
+FakeRequest RequestAt(size_t i) { std::scoped_lock lock{g_fake_mutex}; return g_requests.at(i); }
 void Log(int level, const char* line) {
     if (level >= 2 || std::strstr(line, "TotK") || std::strstr(line, "DSMod"))
         std::fprintf(stderr, "[duo:%d] %s\n", level, line);
@@ -296,6 +348,24 @@ void Swipe(uint32_t x, uint32_t y0, uint32_t y1, std::vector<uint32_t>& latest, 
     }
     Duo::TestTouch(x, y1, false); Run(4, latest, w, h);
 }
+bool Expect(const char* name, const std::string& want) {
+    const std::string got = Duo::TestValue(name);
+    if (got == want) return true;
+    std::fprintf(stderr, "test: FAIL, %s is \"%s\", wanted \"%s\"\n", name, got.c_str(), want.c_str());
+    return false;
+}
+bool ExpectRequest(size_t i, const char* action, const char* category, int slot, const char* actor) {
+    if (Requests() <= i) {
+        std::fprintf(stderr, "test: FAIL, request %zu was not made\n", i);
+        return false;
+    }
+    const FakeRequest r = RequestAt(i);
+    const bool ok = r.action == action && r.category == category && r.slot == slot && r.actor == actor &&
+                    r.partition == 0 && r.gen == FakeGen;
+    std::fprintf(stderr, "test: request %zu: %s %s/%d %s partition %d gen %lld%s\n", i, r.action.c_str(), r.category.c_str(),
+                 r.slot, r.actor.c_str(), r.partition, r.gen, ok ? "" : " (FAIL: not the item tapped)");
+    return ok;
+}
 bool Save(const std::string& path, const std::vector<uint32_t>& px, uint32_t w, uint32_t h) {
     if (px.empty()) return false;
     std::vector<uint32_t> surface(size_t{w} * h);
@@ -351,6 +421,15 @@ int main(int argc, char** argv) {
         g_state = *state;
         ++g_states;
     };
+    const bool actions = sc.name == "actions", actions_off = sc.name == "actions-off";
+    if (actions) {   // ABI 3: the runtime's item actions (here the fake above); actions-off leaves them NULL
+        port.item_actions = FakeItemActions;
+        port.action_state = FakeActionState;
+        port.pouch_gen = FakePouchGen;
+        port.request = FakeRequestOne;
+        port.result = FakeResult;
+    }
+    if (actions || actions_off) Duo::TestWatch("totk.");
     if (!duo_host_start(&port)) return 1;
     Duo::SetSurfaceSize(1240, 1080, true);
     std::vector<uint32_t> latest;
@@ -378,6 +457,63 @@ int main(int argc, char** argv) {
         ok &= Save(out + "-map-menu.png", latest, w, h);
         Tap(120, 60, latest, w, h); Run(30, latest, w, h);   // Back is blocked under the band: still the Map
         ok &= Save(out + "-map-menu-tap.png", latest, w, h);
+    }
+    if (actions || actions_off) {
+        // Inventory, Weapons, the second weapon (not equipped): its action is Equip
+        Tap(493, 1008, latest, w, h); Run(90, latest, w, h);
+        Tap(314, 200, latest, w, h); Run(40, latest, w, h);
+        ok &= Expect("totk.inv.sel.has", "1") && Expect("totk.inv.act.count", "1") && Expect("totk.inv.act.0.label", "Equip");
+        if (actions) {
+            ok &= Expect("totk.inv.act.0.enabled", "1") && Expect("totk.inv.act.0.disabled", "0");
+            Tap(1112, 1000, latest, w, h);   // the action button: request accepted, pending
+            ok &= Expect("totk.act.pending", "1");
+            ok &= Save(out + "-inventory-pending.png", latest, w, h);
+            Tap(1112, 1000, latest, w, h);   // a second tap while it runs is dropped, never queued
+            Run(80, latest, w, h);
+            ok &= ExpectRequest(0, "equip", "weapons", 1, "Weapon_Sword_002");
+            ok &= Requests() == 1;
+            ok &= Expect("totk.act.done", "1") && Expect("totk.act.state", "2");
+            const std::string line = Duo::TestValue("totk.act.line");
+            std::fprintf(stderr, "test: result line \"%s\"\n", line.c_str());
+            ok &= line.starts_with("Equipped: ");
+            ok &= Save(out + "-inventory-done.png", latest, w, h);
+            // Materials: three actions, the third disabled with the runtime's reason
+            Tap(16 + 4 * 134 + 63, 56, latest, w, h); Run(40, latest, w, h);
+            Tap(114, 200, latest, w, h); Run(40, latest, w, h);
+            ok &= Expect("totk.inv.act.count", "3") && Expect("totk.inv.act.2.label", "Fuse to arrows") &&
+                  Expect("totk.inv.act.2.disabled", "1") && Expect("totk.inv.act.2.reason", "notAiming") &&
+                  Expect("totk.inv.act.2.reason_text", "Aim your bow to fuse");
+            ok &= Save(out + "-inventory-materials.png", latest, w, h);
+            // The quick picker: the weapon corner opens it with the equipped weapon selected (Unequip); another cell,
+            // then the confirm bar, equips that one
+            Tap(1164, 60, latest, w, h); Run(30, latest, w, h);
+            Tap(1132, 968, latest, w, h); Run(40, latest, w, h);
+            ok &= Expect("totk.quick.open", "1") && Expect("totk.quick.title", "Weapons") && Expect("totk.quick.count", "5") &&
+                  Expect("totk.quick.0.selected", "1") && Expect("totk.quick.act.0.label", "Unequip");
+            ok &= Save(out + "-quick.png", latest, w, h);
+            Tap(470, 340, latest, w, h); Run(30, latest, w, h);
+            ok &= Expect("totk.quick.2.selected", "1") && Expect("totk.quick.act.0.label", "Equip");
+            Tap(892, 936, latest, w, h); Run(80, latest, w, h);
+            ok &= ExpectRequest(1, "equip", "weapons", 2, "Weapon_Lsword_001") && Expect("totk.act.done", "1");
+            ok &= Save(out + "-quick-done.png", latest, w, h);
+            Tap(348, 936, latest, w, h); Run(30, latest, w, h);   // Back closes the picker
+            ok &= Expect("totk.quick.open", "0");
+        } else {
+            // No runtime actions (Eden Duo): shown, disabled, with the reason; a tap requests nothing
+            ok &= Expect("totk.inv.act.0.enabled", "0") && Expect("totk.inv.act.0.disabled", "1") &&
+                  Expect("totk.inv.act.0.reason", "notAvailableYet") &&
+                  Expect("totk.inv.act.0.reason_text", "Item actions need the TotK Native app");
+            Tap(1112, 1000, latest, w, h); Run(10, latest, w, h);
+            ok &= Expect("totk.act.refused", "1") && Expect("totk.act.reason", "notAvailableYet") &&
+                  Expect("totk.act.line", "Not done: Item actions need the TotK Native app");
+            ok &= Requests() == 0;
+            ok &= Save(out + "-inventory-off.png", latest, w, h);
+            Tap(1164, 60, latest, w, h); Run(30, latest, w, h);
+            Tap(1132, 968, latest, w, h); Run(40, latest, w, h);
+            ok &= Expect("totk.quick.open", "1") && Expect("totk.quick.act.0.disabled", "1") &&
+                  Expect("totk.quick.act.0.label", "Unequip");
+            ok &= Save(out + "-quick-off.png", latest, w, h);
+        }
     }
     if (sc.name == "food") {    // low hearts: swipe the right pager to Food, then open its card
         Swipe(1128, 620, 520, latest, w, h); Run(30, latest, w, h);

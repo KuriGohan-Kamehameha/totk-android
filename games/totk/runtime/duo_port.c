@@ -11,14 +11,17 @@
    game's title id, the fault-free reader (host_os.c host_safe_read), the stateless RomFS readers (romfs.c; aoc_romfs.c
    where the game links it), the log, and one call per presented frame (runtime_duo_frame, from
    runtime_frame_step_update). The first of those calls opens the library, so the game's modules are loaded and
-   published by then; the host does everything slow on its own thread. It only reads: this milestone installs no load
-   plan and patches no game code. */
+   published by then; the host does everything slow on its own thread. It reads the game and installs no load plan or
+   patch. Item actions (ABI 3) are not the host's: for Tears of the Kingdom the host is handed the runtime's own route
+   (companion_jni.c runtime_companion_item_*, over companion_actions.c), which runs every game call on the game's
+   frame-end thread exactly as the Java companion's requests do. */
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
 #include "runtime.h"
 #include "host_os.h"
 #include "duo_link.h"
+#include "companion.h"
 #include "companion_state.h"
 #include "mod_ips.h"
 #include "../duo/duo_port.h"
@@ -43,9 +46,18 @@ int64_t runtime_aoc_read_rel(const char *rel, uint64_t offset, void *out, uint64
 /* The title id the host and its package check (games.toml title_id; services.c and fs_host.c have their own copies). */
 #ifdef GAME_BOTW
 #define DUO_TITLE_ID 0x01007EF00011E000ull
+#define DUO_ITEM_ACTIONS 0   /* Breath of the Wild's module needs none, and this runtime has none for that game */
 #else
 #define DUO_TITLE_ID 0x0100F2C0115B6000ull
+#define DUO_ITEM_ACTIONS 1   /* Tears of the Kingdom: companion_actions.c, in the app builds */
 #endif
+/* companion_jni.c (the app builds; weak: a headless build has no companion, and the host is then given no actions). */
+unsigned runtime_companion_item_actions(int key, int slot, CompanionAction out[3]) __attribute__((weak));
+void runtime_companion_action_state(int *ok, const char **reason) __attribute__((weak));
+long long runtime_companion_pouch_gen(void) __attribute__((weak));
+int runtime_companion_item_request(const char *action, const char *category, int slot, const char *actor, int partition,
+                                   long long pouch_gen) __attribute__((weak));
+size_t runtime_companion_item_result(int seq, char *out, size_t cap) __attribute__((weak));
 #ifdef TOTK_ANDROID_APP
 const char *runtime_android_private_files(void);                                           /* frontend_android.c */
 #endif
@@ -60,6 +72,16 @@ static pthread_once_t start_once = PTHREAD_ONCE_INIT;
 static int port_safe_read(uint64_t a, void *out, size_t n) { return host_safe_read(a, out, n); }
 static void port_log(int level, const char *line) { fprintf(stderr, "[duo]%s %s\n", level >= 4 ? " error:" : level == 3 ? " warning:" : "", line); }
 static uint64_t port_frames(void) { return atomic_load_explicit(&frames, memory_order_relaxed); }
+#if DUO_ITEM_ACTIONS
+/* DuoPortAction and CompanionAction carry the same three fields; copied rather than cast. */
+static unsigned port_item_actions(int key, int slot, DuoPortAction out[3]) {
+    CompanionAction a[3];
+    unsigned n = runtime_companion_item_actions(key, slot, a);
+    if (n > 3) n = 3;
+    for (unsigned i = 0; i < n; i++) out[i] = (DuoPortAction){a[i].id, a[i].enabled, a[i].reason};
+    return n;
+}
+#endif
 
 /* The common game state (companion_state.h): the host's tick thread writes each complete sample here (DuoPort.state),
    the app reads the last one from any thread (companion_jni.c). One writer; a reader that meets a write in flight
@@ -152,6 +174,15 @@ static void start(void) {
     /* main's own build id (its GNU note, as mods match it: mod_ips.h), so a package for another build of the game is
        refused by the host with its own diagnostic. Breath of the Wild 1.6.0: 8E9978D50BDD20B4C8395A106C27FFDE,
        Tears of the Kingdom 1.4.3: 277178B7DBA1B6D4949A84778D4ABC58B31B34F5. */
+#if DUO_ITEM_ACTIONS
+    if (runtime_companion_item_actions && runtime_companion_action_state && runtime_companion_pouch_gen &&
+        runtime_companion_item_request && runtime_companion_item_result) {
+        port.item_actions = port_item_actions; port.action_state = runtime_companion_action_state;
+        port.pouch_gen = runtime_companion_pouch_gen; port.request = runtime_companion_item_request;
+        port.result = runtime_companion_item_result;
+    }
+#endif
+    fprintf(stderr, "[duo] item actions: %s\n", port.request ? "the runtime's (companion_actions.c, game frame end)" : "none in this build");
     if (main_build_read) memcpy(port.build_id, main_build, sizeof port.build_id);
     else fprintf(stderr, "[duo] main has no single build-id note; the package will not match it\n");
     const char *dir = getenv("TOTK_DUO_DIR");

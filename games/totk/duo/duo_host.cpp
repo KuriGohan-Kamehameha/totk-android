@@ -16,6 +16,8 @@
 //   JNI). No GPU is involved; the game's Vulkan device never sees the companion.
 //
 // Read-only: the shim refuses guest writes and reports no mailbox, so the module's action bridge stays unavailable.
+// The host never calls game code. Item actions are the runtime's (DuoPort ABI 3): port_module.cpp hands the Tears of
+// the Kingdom module a table that forwards to them, and the runtime runs them on the game's frame end.
 
 #include <algorithm>
 #include <array>

@@ -5,11 +5,21 @@
 // 0100F2C0115B6000.cpp, CMakeLists.txt DUO_TITLE) is compiled in, so "loading" is the same handshake without a file.
 // The package's manifest still decides: its title id, module ABI and build-id list are checked exactly as Eden checks
 // them, and a package for another build gets the same diagnostic.
+//
+// Item actions (DUO_MODULE_ACTIONS, Tears of the Kingdom): the module's port-only table (vendor/.../
+// totk_native_actions.h) is bound at configure time to the runtime's route, the DuoPort ABI 3 functions (duo_port.h,
+// MIT; runtime/companion_actions.c behind them). This file only forwards: the rules, the gate, the one request at a
+// time and every game call stay the runtime's, on the game's frame-end thread. Without them (a runtime that offers
+// none) the module is bound to nothing and shows its actions unavailable, as in Eden Duo.
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <format>
+#include <map>
+#include <mutex>
 #include <stdexcept>
+#include <string>
 
 #include <nlohmann/json.hpp>
 
@@ -20,6 +30,9 @@
 #include "core/mods/mod_module.h"
 #include "core/mods/mod_package_io.h"
 #include "duo_host.h"
+#if DUO_MODULE_ACTIONS
+#include "totk_native_actions.h"
+#endif
 
 namespace Core::Mods {
 namespace {
@@ -42,6 +55,18 @@ const EdenDsmodModuleApi* g_module_api = nullptr;
 EdenDsmodModuleApi g_tapped_api{};
 thread_local const EdenDsmodHostApi* t_runtime_host = nullptr;
 
+// Duo::TestWatch: the desktop test reads some of the module's values back (off unless a test asks).
+std::atomic<bool> g_watching{false};
+std::mutex g_watch_mutex;
+std::string g_watch_prefix;
+std::map<std::string, std::string, std::less<>> g_watched;
+void Watch(const char* name, std::string value) {
+    std::scoped_lock lock{g_watch_mutex};
+    if (name != nullptr && std::string_view{name}.starts_with(g_watch_prefix)) {
+        g_watched[name] = std::move(value);
+    }
+}
+
 void TappedSample(void* instance, const EdenDsmodHostApi* host) {
     struct Scope {
         const EdenDsmodHostApi* previous;
@@ -54,10 +79,64 @@ void TappedSample(void* instance, const EdenDsmodHostApi* host) {
     tapped.publish_i64 = [](void* userdata, const char* name, int64_t value) {
         t_runtime_host->publish_i64(userdata, name, value);
         Duo::LedTap(name, value);
+        if (g_watching.load(std::memory_order_relaxed)) {
+            Watch(name, std::to_string(value));
+        }
     };
+    if (g_watching.load(std::memory_order_relaxed)) {
+        tapped.publish_text = [](void* userdata, const char* name, const char* value) {
+            t_runtime_host->publish_text(userdata, name, value);
+            Watch(name, value != nullptr ? value : "");
+        };
+    }
     g_module_api->sample(instance, &tapped);
     Duo::LedCommit();
 }
+
+#if DUO_MODULE_ACTIONS
+// The runtime's item actions (DuoPort ABI 3) in the module's table: plain forwarding, the port's functions are
+// thread-safe and the strings they return are static.
+const DuoPort* ActionPort() {
+    const DuoPort* const port = Duo::Port();
+    return port != nullptr && port->item_actions != nullptr && port->action_state != nullptr &&
+                   port->pouch_gen != nullptr && port->request != nullptr && port->result != nullptr
+               ? port
+               : nullptr;
+}
+const TotkNativeActions g_native_actions{
+    .version = TOTK_NATIVE_ACTIONS_VERSION,
+    .struct_size = sizeof(TotkNativeActions),
+    .userdata = nullptr,
+    .item_actions = [](void*, int32_t key, int32_t slot, TotkNativeAction out[3]) -> uint32_t {
+        DuoPortAction actions[3]{};
+        const unsigned n = std::min(ActionPort()->item_actions(key, slot, actions), 3u);
+        for (unsigned i = 0; i < n; ++i) {
+            out[i] = {actions[i].id, actions[i].enabled, actions[i].reason};
+        }
+        return n;
+    },
+    .action_state = [](void*, int32_t* ok, const char** reason) {
+        int on = 0;
+        ActionPort()->action_state(&on, reason);
+        *ok = on;
+    },
+    .pouch_gen = [](void*) -> int64_t { return ActionPort()->pouch_gen(); },
+    .request = [](void*, const char* action, const char* category, int32_t slot, const char* actor, int32_t partition,
+                  int64_t pouch_gen) -> int32_t {
+        return ActionPort()->request(action, category, slot, actor, partition, pouch_gen);
+    },
+    .result = [](void*, int32_t seq, char* out, size_t cap) -> size_t { return ActionPort()->result(seq, out, cap); },
+};
+const EdenDsmodModuleExtensions* g_module_extensions = nullptr;
+EdenDsmodModuleExtensions g_tapped_extensions{};
+void TappedConfigure(void* instance, const EdenDsmodHostExtensions* host) {
+    g_module_extensions->configure(instance, host);
+    const bool offered = ActionPort() != nullptr;
+    totk_native_port_bind_actions(instance, offered ? &g_native_actions : nullptr);
+    LOG_INFO(Core, "DSMod module: item actions {}",
+             offered ? "through the runtime (DuoPort ABI 3)" : "not offered by this runtime; shown unavailable");
+}
+#endif
 
 } // namespace
 
@@ -146,6 +225,12 @@ std::unique_ptr<GameModule> GameModule::Load(FileSys::VirtualDir assets, u64 tit
         g_tapped_api = *api;
         g_tapped_api.sample = TappedSample;
         loaded->api = &g_tapped_api;
+#if DUO_MODULE_ACTIONS
+        g_module_extensions = loaded->extensions;
+        g_tapped_extensions = *loaded->extensions;
+        g_tapped_extensions.configure = TappedConfigure;
+        loaded->extensions = &g_tapped_extensions;
+#endif
         return loaded;
     } catch (const std::exception& exception) {
         error = exception.what();
@@ -176,3 +261,17 @@ ModuleActionOutcome CallModuleAction(const EdenDsmodModuleExtensions* extensions
 }
 
 } // namespace Core::Mods
+
+namespace Duo {
+void TestWatch(const char* prefix) {
+    std::scoped_lock lock{Core::Mods::g_watch_mutex};
+    Core::Mods::g_watch_prefix = prefix != nullptr ? prefix : "";
+    Core::Mods::g_watched.clear();
+    Core::Mods::g_watching.store(prefix != nullptr && *prefix != 0);
+}
+std::string TestValue(const std::string& name) {
+    std::scoped_lock lock{Core::Mods::g_watch_mutex};
+    const auto it = Core::Mods::g_watched.find(name);
+    return it != Core::Mods::g_watched.end() ? it->second : std::string{};
+}
+} // namespace Duo

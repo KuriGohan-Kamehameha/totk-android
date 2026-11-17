@@ -56,6 +56,21 @@ class DuoHostDesktop(unittest.TestCase):
                     state = re.search(r'last status (\d+) in_game \d+ menu (\d+) tablet 1 life (\S+)', run.stderr)
                     self.assertIsNotNone(state, run.stderr[-2000:])
                     self.assertEqual((int(state.group(1)), int(state.group(2)), state.group(3)), (status, menu, life))
+            # Item actions (DuoPort ABI 3): through a fake runtime the Inventory's and the quick picker's requests reach
+            # it with the tapped item and end as done; without the runtime's functions (Eden Duo's case) every action
+            # shows disabled and nothing is requested. The test program checks the module's values itself.
+            for scene, lines in (('actions', ['request 0: equip weapons/1 Weapon_Sword_002 partition 0 gen 7',
+                                              'request 1: equip weapons/2 Weapon_Lsword_001 partition 0 gen 7',
+                                              'item actions through the runtime (DuoPort ABI 3)']),
+                                 ('actions-off', ['item actions not offered by this runtime; shown unavailable',
+                                                  'refused notAvailableYet'])):
+                with self.subTest(scene=scene):
+                    run = subprocess.run([str(test), str(PACKAGES), os.environ['TOTK_DUO_TEST_ROMFS'],
+                                          os.environ['TOTK_DUO_TEST_MAIN'], str(Path(work) / 'page'), scene],
+                                         capture_output=True, text=True, timeout=900)
+                    self.assertEqual(run.returncode, 0, run.stderr[-3000:])
+                    for line in lines:
+                        self.assertIn(line, run.stderr)
 
 
 if __name__ == '__main__':

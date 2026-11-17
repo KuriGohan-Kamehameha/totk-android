@@ -2,6 +2,7 @@
 // Internal to libduo_host: the port's service table as the shim and the host share it.
 #pragma once
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "duo_port.h"
@@ -26,6 +27,11 @@ uint64_t Ticks();
 /// One finger down at (x, y) in surface pixels, or every finger lifted (down false): the test's taps, which reach the
 /// runtime as DuoSurfaceView's do (the Android path is DuoSurfaceView.nativeTouch, off unless TOTK_DUO_TOUCH=1).
 void TestTouch(uint32_t x, uint32_t y, bool down);
+/// From now on the module's published numbers and texts whose names start with `prefix` are kept (port_module.cpp);
+/// until it is called nothing is (the app never calls it). TestValue: the last one published under `name`, as text
+/// ("" if none).
+void TestWatch(const char* prefix);
+std::string TestValue(const std::string& name);
 
 // A few of the title module's published numbers become the second screen's common game state
 // (runtime/companion_state.h; duo_state.h says which and how, per title): whether a save is running, whether the

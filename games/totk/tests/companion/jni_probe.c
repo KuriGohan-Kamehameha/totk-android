@@ -85,6 +85,17 @@ size_t companion_result(int seq, CompanionBuf *out) {
     out->data = strdup("{\"seq\":1,\"state\":\"done\",\"reason\":\"\",\"status\":\"ready\"}");
     return out->data ? (out->len = strlen(out->data)) : 0;
 }
+/* The Eden Duo route's reads (runtime_companion_item_*): a game that is not in play. */
+int companion_view(uintptr_t main_base, companion_read_fn rd, int key, int slot, CompanionView *v) {
+    (void)main_base; (void)rd; (void)key; (void)slot;
+    memset(v, 0, sizeof *v); v->status = "starting";
+    return 0;
+}
+unsigned companion_item_actions(int key, const CompanionView *v, CompanionAction out[3]) { (void)key; (void)v; (void)out; return 0; }
+void companion_action_state(int *ok, const char **reason, int *pause_menu, int *aiming) {
+    *ok = 0; *reason = "stale"; *pause_menu = 0; *aiming = 0;
+}
+long long companion_pouch_gen(uint64_t ident) { (void)ident; return 0; }
 
 JNIEXPORT void JNICALL Java_com_aure_totk_CompanionGateProbe_option(JNIEnv *env, jclass cls, jstring value) {
     (void)cls;

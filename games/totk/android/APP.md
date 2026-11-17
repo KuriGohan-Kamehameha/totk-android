@@ -1490,6 +1490,11 @@ The UI's panel unit is `max(0.55 × density, min(density, shortSidePx / 700))`, 
 This keeps high-dpi handheld panels useful without forcing tablet layouts onto a fixed resolution.
 Adventure uses compact equipment/armor rows to fit the Thor panel; smaller/portrait panels can scroll.
 Tapping an equipped weapon, bow, shield or armor card on Adventure opens that item, selected, in its Inventory category.
+On landscape panels (aspect 0.9–2.0, at least 480 px tall) Adventure is instead drawn on a fixed 1240×1080 grid scaled
+to fit, the layout of Breath of the Wild's Ready page (`CompanionView.ready()`, mapping in
+[docs/companion-totk-main-page.md](../../../docs/companion-totk-main-page.md)). It uses only values the snapshot
+already carries: the dim from `actionState.reason == "event"`, the menu band from `actionState.pauseMenu` or the
+common state's `menu_open`, and the nearest shrine or Lightroot from the prepared `map/markers.json`.
 
 The Canvas menu uses the game's own Purah Pad background, edge ornaments, icon tabs, item slots/cursor,
 detail backing, map frame/north mark and gauge parts when present in the generated asset index. There is no

@@ -7,8 +7,14 @@ implementation (snapshot format, polling, the native action checks and the devic
 
 ## What it shows
 
-- **Adventure**: hearts (in quarters, with gloom and extra hearts), stamina and battery capacity, rupees, the equipped
-  weapon, bow, shield and armor, the sages and a minimap. Tapping an equipped item opens it in its inventory category.
+- **Adventure** (the main page): on the Thor's second screen and other landscape screens it is laid out like Breath of
+  the Wild's Ready page ([design](companion-totk-main-page.md)). A round minimap sits in the middle. The shield, bow,
+  ability and weapon are in the corners, with the arrows and the weapon's fused material beside them. Four dials round
+  the map show Poes, stamina wheels, battery cells and the distance to the nearest shrine (Lightroot in the Depths); tap
+  that dial for a compass. Two pagers show hearts or sages, and armor or the meal effect: tap or swipe up and down to
+  turn them. Below are the rupees, the position and a command bar (Inventory, Map, `− Map`, `+ Menu`). During a cutscene
+  the page dims; with the pause menu open it says so, and only the command bar can be touched. Tapping an equipped item
+  opens it in its inventory category. Portrait and small screens keep the earlier scrolling layout.
 - **Inventory**: all eight categories (weapons, bows & arrows, shields, armor, materials, food, Zonai devices, key
   items). Every item is shown under its in-game name and description, also the ones the game names after another item
   (caught fish and insects, bundles, the opening's Master Sword and Champion's Leathers). Tap an item for its details

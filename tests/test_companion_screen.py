@@ -53,6 +53,7 @@ public class AssetManager {
     'android/graphics/Path.java': '''package android.graphics;
 public class Path {
     public void reset() { } public void moveTo(float x, float y) { } public void cubicTo(float a, float b, float c, float d, float e, float f) { }
+    public void lineTo(float x, float y) { } public void close() { }
 }''',
     'android/graphics/RectF.java': '''package android.graphics;
 public class RectF {
@@ -157,6 +158,7 @@ TOTK_STUBS = {
 import android.graphics.*;
 public final class AssetStore {
     public org.json.JSONObject index = new org.json.JSONObject();
+    public org.json.JSONArray markers = new org.json.JSONArray();
     public AssetStore(android.content.Context context, Runnable changed) { }
     public static boolean available(android.content.Context context) { return true; }
     public static String humanize(String key) { return key; }
@@ -169,7 +171,7 @@ public final class AssetStore {
 }''',
     'com/aure/totk/companion/MapRenderer.java': '''package com.aure.totk.companion;
 final class MapRenderer {
-    boolean following = true, automaticLayer = true; String layer = "Ground";
+    boolean following = true, automaticLayer = true, round; String layer = "Ground";
     MapRenderer(AssetStore assets, float unit) { }
     void setUnit(float u) { } void recenter() { } void pan(float dx, float dy) { } void scale(float f, float x, float y) { }
     void marker(double x, double z, double heading) { } void noMarker() { }
@@ -243,6 +245,28 @@ public final class ScreenProbe {
             require(screen.page() == 1, "the game's state does not move the page");
         }
         System.out.println("pass: companion screen " + args[0]);
+    }
+}
+'''
+
+# The main page's rules that need no drawing: which screens get the Ready grid, and the low-hearts threshold it shares
+# with the stick LEDs (BifrostLooks.lowOn).
+READY_PROBE = r'''package com.aure.totk.companion;
+
+public final class ReadyProbe {
+    static void require(boolean ok, String what) { if (!ok) throw new AssertionError(what); }
+    public static void main(String[] args) {
+        require(CompanionView.readyLayout(1240, 1080), "the Thor's second screen");
+        require(CompanionView.readyLayout(1920, 1080), "a wide landscape screen");
+        require(!CompanionView.readyLayout(1080, 2400), "a phone in portrait keeps the responsive page");
+        require(!CompanionView.readyLayout(420, 380), "a small panel keeps the responsive page");
+        require(!CompanionView.readyLayout(0, 0), "no size yet");
+        for (int max = 12; max <= 120; max += 4) {
+            int on = Math.max(4, (max + 3) / 4);   // BifrostLooks.lowOn
+            require(CompanionView.lowHearts(on, max) && !CompanionView.lowHearts(on + 1, max), "low hearts at " + on + " of " + max);
+        }
+        require(CompanionView.lowHearts(0, 80) && !CompanionView.lowHearts(-1, 80) && !CompanionView.lowHearts(4, -1), "unknown is not low");
+        System.out.println("pass: ready rules");
     }
 }
 '''
@@ -398,6 +422,14 @@ class CompanionScreenTests(unittest.TestCase):
     def test_totk_screen_page_round_trip(self):
         classes = self.screen_classes('totk')
         self.assertIn('pass: companion screen totk', self.run_probe(classes, 'com.aure.totk.companion.ScreenProbe', 'totk'))
+
+    def test_totk_ready_rules(self):
+        classes = self.screen_classes('totk')
+        probe = self.write('totk-ready', {'com/aure/totk/companion/ReadyProbe.java': READY_PROBE})
+        done = subprocess.run([self.javac, '--release', '17', '-Xlint:-options', '-cp', str(classes), '-d', str(classes), *map(str, probe)],
+                              capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn('pass: ready rules', self.run_probe(classes, 'com.aure.totk.companion.ReadyProbe'))
 
     def test_botw_screen_keeps_no_page_and_needs_no_library(self):
         # No libduo_host.so on the host: the class still loads and the screen still stands behind the interface.

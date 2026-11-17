@@ -5,6 +5,18 @@ the game version it runs is shown separately. versionCode = major × 10000 + min
 
 ## Unreleased
 
+### Second screen
+- The main (Adventure) page is laid out like Breath of the Wild's Ready page on landscape second screens (AYN Thor). It
+  has:
+  - a round minimap;
+  - gear in the corners, with the arrow and fuse wells beside them;
+  - Poes, stamina, compass and battery dials;
+  - hearts/sages and armor/meal pagers;
+  - a command bar.
+
+  It dims during cutscenes and shows when the pause menu is open. Checked with host renders and tests only, not yet
+  on a device. Details: [docs/companion-totk-main-page.md](docs/companion-totk-main-page.md).
+
 ### Mods
 - *Game data → Mods* imports a TKMM merge or a mod's folder or zip (anything with `romfs` inside) into the app's
   private storage, and removes it again. Details: [docs/mods.md](docs/mods.md).

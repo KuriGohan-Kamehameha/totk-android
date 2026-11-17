@@ -34,6 +34,16 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
     private static final String[] ACTION_DONE = {"Equipped", "Unequipped", "Eaten", "Drunk", "Used", "Now holding it", "Taken out", "Fused to arrows"};
     /** Adventure cards: CODE_JUMP + category * 1000 + index in Snapshot.items(category). */
     private static final int CODE_ACTION = 300, CODE_JUMP = 10000;
+    /** The main page's own controls (ready layout): its two pagers, the compass dial and card, the minimap. */
+    private static final int CODE_LEFT_PANE = 30, CODE_RIGHT_PANE = 31, CODE_COMPASS = 32, CODE_CARD_CLOSE = 33, CODE_MINIMAP = 34;
+    /** The main page is drawn on a fixed 1240 x 1080 grid (the AYN Thor's second screen), scaled to fit, the way Breath of
+     * the Wild's Ready page is; screens of another shape keep the responsive Adventure layout. */
+    static final float READY_W = 1240, READY_H = 1080;
+    private static final int TEAL = 0xff00ffc3, TEAL_TEXT = 0xffa8fbe6, RED = 0xffec4a34, PANE = 0x7d000000, DISC = 0xff1b1a14;
+    private boolean readyShown, compassOpen, gameMenu;
+    private int leftPane, rightPane;
+    private float readyScale = 1, readyX, readyY;
+    private final RectF leftPaneHit = new RectF(), rightPaneHit = new RectF();
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Path path = new Path();
     private static final android.graphics.ColorFilter HEART_RED = new android.graphics.PorterDuffColorFilter(0xffe7796b, android.graphics.PorterDuff.Mode.SRC_IN);
@@ -137,8 +147,8 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
     /** The common state names a loading screen where the game side can tell one; the rest of it this view already has,
      * in more detail, from its own snapshot. */
     @Override public void onGameState(CompanionState state) {
-        if (state.status == gameStatus) return;
-        gameStatus = state.status;
+        if (state.status == gameStatus && state.menuOpen == gameMenu) return;
+        gameStatus = state.status; gameMenu = state.menuOpen;
         motion.show(Motion.view(data.status, stale, gameStatus), android.os.SystemClock.uptimeMillis());
         invalidate();
     }
@@ -160,7 +170,7 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
         page = next; scroll = 0; selection = -1; poller.requestFull(); invalidate();
     }
     private void drawPage(Canvas c, int which) {
-        if (which == 0) adventure(c);
+        if (which == 0) { if (readyLayout(getWidth(), getHeight())) ready(c); else adventure(c); }
         else if (which == 1) inventory(c);
         else fullMap(c);
     }
@@ -263,12 +273,16 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
         assets.decor(c, "background", rect(0, 0, w, h), u);
         assets.decor(c, "background_pattern", rect(0, 0, w, h), u);
         assets.decor(c, "vignette", rect(0, 0, w, h), u);
-        float ornamentWidth = Math.min(w * .24f, h * .45f);
-        float leftHeight = ornamentWidth / assets.decorAspect("deco_left", .9f);
-        float rightHeight = ornamentWidth / assets.decorAspect("deco_right", .7f);
-        assets.decor(c, "deco_left", rect(0, h - leftHeight, ornamentWidth, h), u);
-        assets.decor(c, "deco_right", rect(w - ornamentWidth, h - rightHeight, w, h), u);
-        assets.decor(c, "footer", rect(margin, h - dp(1), w - margin, h), u);
+        // The main page fills the screen edge to edge (its corner cards sit where the ornaments would).
+        readyShown = page == 0 && motion.view() == Motion.CONTENT && readyLayout(getWidth(), getHeight());
+        if (!readyShown) {
+            float ornamentWidth = Math.min(w * .24f, h * .45f);
+            float leftHeight = ornamentWidth / assets.decorAspect("deco_left", .9f);
+            float rightHeight = ornamentWidth / assets.decorAspect("deco_right", .7f);
+            assets.decor(c, "deco_left", rect(0, h - leftHeight, ornamentWidth, h), u);
+            assets.decor(c, "deco_right", rect(w - ornamentWidth, h - rightHeight, w, h), u);
+            assets.decor(c, "footer", rect(margin, h - dp(1), w - margin, h), u);
+        }
         float fade = motion.fade(frameNow);
         if (motion.view() != Motion.CONTENT) {
             // Title, loading, unsupported: views of their own on the whole screen, with nothing to touch.
@@ -280,12 +294,15 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
             schedule();
             return;
         }
-        float tabTop = dp(6), tw = Math.min(dp(128), (w - margin * 2) / 3);
-        float tabLeft = (w - tw * 3) / 2;
-        for (int i = 0; i < 3; i++) tab(c, assets.pageIcon(PAGE_KEYS[i]), PAGE_SYMBOLS[i],
-                rect(tabLeft + i * tw, tabTop, tabLeft + (i + 1) * tw, tabTop + tabHeight), i, page == i);
-        if (!assets.decor(c, "header_line", rect(margin, dp(64), w - margin, dp(65)), u)) divider(c, margin, w - margin, dp(64));
-        content.set(margin, dp(78), w - margin, h - dp(22));
+        if (readyShown) content.set(0, 0, w, h);   // no page tabs: its own command bar leads to the other pages
+        else {
+            float tabTop = dp(6), tw = Math.min(dp(128), (w - margin * 2) / 3);
+            float tabLeft = (w - tw * 3) / 2;
+            for (int i = 0; i < 3; i++) tab(c, assets.pageIcon(PAGE_KEYS[i]), PAGE_SYMBOLS[i],
+                    rect(tabLeft + i * tw, tabTop, tabLeft + (i + 1) * tw, tabTop + tabHeight), i, page == i);
+            if (!assets.decor(c, "header_line", rect(margin, dp(64), w - margin, dp(65)), u)) divider(c, margin, w - margin, dp(64));
+            content.set(margin, dp(78), w - margin, h - dp(22));
+        }
         if (content.height() <= 0) return;
         int save = fade < 1 ? c.saveLayerAlpha(content, Math.round(255 * fade)) : c.save();
         c.clipRect(content);
@@ -392,7 +409,7 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
                 if (item != null && item.optBoolean("equipped")) { equipped = item; index = i; break; }
             }
             equipment(c, equipped, CATEGORY_SYMBOLS[kind], bx + kind * (cardWidth + dp(8)), y, cardWidth,
-                    kind == 1 && arrow != null ? "×" + number(arrow, "count") : "", CODE_JUMP + kind * 1000 + index);
+                    kind == 1 && arrow != null ? "×" + number(arrow, "count") : "", jump(kind, index));
         }
         y += gearHeight;
         divider(c, bx, bx + innerWidth, y);
@@ -447,6 +464,399 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
         for (int i = 3; i < targets.size(); i++) targets.get(i).box.offset(0, -scroll);
         scrollIndicator(c);
     }
+    private static int jump(int category, int index) { return CODE_JUMP + category * 1000 + (index < 0 ? 999 : index); }
+
+    /** Whether the main page uses the fixed Ready grid: a landscape screen big enough for it (the Thor's 1240 x 1080 second
+     * screen and screens of a similar shape). Portrait phones and small panels keep the responsive Adventure layout. */
+    static boolean readyLayout(int w, int h) {
+        if (w <= 0 || h <= 0) return false;
+        float aspect = (float)w / h;
+        return aspect >= .9f && aspect <= 2f && Math.min(w, h) >= 480;
+    }
+    /** A touch target given on the 1240 x 1080 grid. */
+    private void hit(float l, float t, float r, float b, int code) {
+        RectF box = new RectF(); onScreen(box, l, t, r, b); targets.add(new Target(box, code));
+    }
+    private void onScreen(RectF out, float l, float t, float r, float b) {
+        out.set(readyX + l * readyScale, readyY + t * readyScale, readyX + r * readyScale, readyY + b * readyScale);
+    }
+    private static int alpha(int color, int a) { return (color & 0x00ffffff) | a << 24; }
+    /** One line on the grid: align 0 left, 1 centred, 2 right of x; cut with an ellipsis past maxWidth (0: no limit). */
+    private void label(Canvas c, String value, float x, float baseline, float size, int color, int align, float maxWidth) {
+        if (value == null || value.isEmpty()) return;
+        String line = value.replace('\n', ' ');
+        paint.setTypeface(assets.typeface(line)); paint.setTextSize(size); paint.setColor(color); paint.setTextAlign(Paint.Align.LEFT);
+        paint.setStyle(Paint.Style.FILL);
+        if (maxWidth > 0 && paint.measureText(line) > maxWidth) {
+            int end = paint.breakText(line, true, Math.max(0, maxWidth - paint.measureText("…")), null);
+            line = line.substring(0, end) + "…";
+        }
+        float width = paint.measureText(line);
+        c.drawText(line, align == 1 ? x - width / 2 : align == 2 ? x - width : x, baseline, paint);
+    }
+    /** A value as the game's HUD draws numbers: light figures on a dark outline, centred on x. */
+    private void numeral(Canvas c, String value, float x, float baseline, float size, int color) {
+        if (value == null || value.isEmpty()) return;
+        paint.setTypeface(assets.typeface(value)); paint.setTextSize(size); paint.setTextAlign(Paint.Align.LEFT);
+        float left = x - paint.measureText(value) / 2;
+        paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(size / 7); paint.setColor(0xc0000000);
+        c.drawText(value, left, baseline, paint);
+        paint.setStyle(Paint.Style.FILL); paint.setColor(color);
+        c.drawText(value, left, baseline, paint);
+    }
+    /** Up to two centred lines (an item name under its icon). */
+    private void twoLines(Canvas c, String value, float cx, float baseline, float width, float size, int color) {
+        String rest = value == null ? "" : value.replace('\n', ' ');
+        paint.setTypeface(assets.typeface(rest)); paint.setTextSize(size);
+        for (int line = 0; line < 2 && !rest.isEmpty(); line++) {
+            int end = paint.breakText(rest, true, width, null);
+            if (end <= 0) break;
+            if (end < rest.length() && line == 0) { int space = rest.lastIndexOf(' ', end); if (space > 0) end = space; }
+            label(c, line == 1 ? rest : rest.substring(0, end), cx, baseline + line * size * 1.15f, size, color, 1, width);
+            rest = line == 1 ? "" : rest.substring(end).trim();
+        }
+    }
+    private void disc(Canvas c, float cx, float cy, float radius, int fill) {
+        paint.setStyle(Paint.Style.FILL); paint.setColor(fill); c.drawCircle(cx, cy, radius, paint);
+        paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(2); paint.setColor(alpha(INK, 0x99)); c.drawCircle(cx, cy, radius, paint);
+        paint.setStyle(Paint.Style.FILL);
+    }
+    private void image(Canvas c, Bitmap image, float l, float t, float r, float b, int opacity) {
+        if (image == null) return;
+        paint.setColor(alpha(Color.WHITE, opacity)); c.drawBitmap(image, null, rect(l, t, r, b), paint);
+    }
+    private void bar(Canvas c, float x, float y, float width, double value, double maximum, int color) {
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(alpha(INK, 0x40)); c.drawRect(x, y, x + width, y + 8, paint);
+        paint.setColor(color); c.drawRect(x, y, x + width * (float)Math.max(0, Math.min(1, value / Math.max(1, maximum))), y + 8, paint);
+    }
+    private static int equippedIndex(JSONArray list) {
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject item = list.optJSONObject(i);
+            if (item != null && item.optBoolean("equipped")) return i;
+        }
+        return -1;
+    }
+    /** Durability scale of a category: the item's own maxLife when the game gives one, else the category's longest. */
+    private static double durabilityScale(JSONArray list, JSONObject item) {
+        if (item.has("maxLife")) return item.optDouble("maxLife", 1);
+        double scale = 1;
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject other = list.optJSONObject(i);
+            if (other != null) scale = Math.max(scale, other.optDouble("life", 0));
+        }
+        return scale;
+    }
+    /** Quarter hearts as hearts: 47 → "11¾". */
+    private static String hearts(int quarters) {
+        int q = Math.max(0, quarters);
+        String[] parts = {"", "¼", "½", "¾"};
+        return q / 4 == 0 && q % 4 != 0 ? parts[q % 4] : q / 4 + parts[q % 4];
+    }
+    private static String wheels(double units) {
+        double value = Math.max(0, units) / 1000;
+        return value == Math.rint(value) ? String.valueOf((long)value) : String.format(Locale.ROOT, "%.1f", value);
+    }
+    /** Low hearts where the stick LEDs turn red (BifrostLooks.lowOn): at or under one heart or a quarter of the maximum
+     * (rounded up to a quarter heart), whichever is more. */
+    static boolean lowHearts(int life, int max) { return life >= 0 && max > 0 && life <= Math.max(4, (max + 3) / 4); }
+
+    /** The nearest shrine (Surface, Sky) or Lightroot (Depths) on Link's layer, from the map markers prepared with the art. */
+    private static final class Waypoint { double distance, bearing; String label = ""; }
+    private Waypoint nearest(String layer) {
+        double px = data.coordinate(0), pz = data.coordinate(2);
+        if (!Double.isFinite(px) || !Double.isFinite(pz)) return null;
+        String type = "UnderGround".equals(layer) ? "lightroot" : "shrine";
+        JSONArray markers = assets.markers;
+        Waypoint best = null;
+        for (int i = 0; i < markers.length(); i++) {
+            JSONObject marker = markers.optJSONObject(i);
+            if (marker == null || !type.equals(marker.optString("type", "")) || !layer.equals(marker.optString("layer", layer))) continue;
+            double dx = marker.optDouble("x", Double.NaN) - px, dz = marker.optDouble("z", Double.NaN) - pz;
+            double distance = Math.hypot(dx, dz);
+            if (!Double.isFinite(distance) || best != null && distance >= best.distance) continue;
+            if (best == null) best = new Waypoint();
+            best.distance = distance;
+            best.bearing = Math.toDegrees(Math.atan2(dx, -dz));   // clockwise from north; north is -Z on the map
+            best.label = marker.optString("label", "");
+        }
+        return best;
+    }
+    private static String distance(double metres) {
+        return metres < 1000 ? Math.round(metres) + " m" : String.format(Locale.ROOT, "%.1f km", metres / 1000);
+    }
+
+    /** The main page on the Ready grid of Breath of the Wild's second screen, with Tears of the Kingdom's own content: a
+     * round minimap in the middle, the equipped gear in the four corners (shield, bow, ability, weapon) with the arrows
+     * and the weapon's fused material hanging off them, four dials round the map (Poes, stamina, compass, battery), two
+     * pagers (hearts and sages; armor and meal), rupees, the position and a command bar to the other pages. */
+    private void ready(Canvas c) {
+        float w = getWidth(), h = getHeight();
+        readyScale = Math.min(w / READY_W, h / READY_H);
+        readyX = (w - READY_W * readyScale) / 2; readyY = (h - READY_H * readyScale) / 2;
+        scrollMax = 0; scroll = 0;
+        int first = targets.size();
+        JSONObject actionState = Snapshot.object(data.root, "actionState");
+        boolean event = "event".equals(actionState.optString("reason", ""));
+        boolean menu = !event && (gameMenu || actionState.optBoolean("pauseMenu"));
+        String layer = data.player.optString("layer", "Ground");
+        c.save(); c.translate(readyX, readyY); c.scale(readyScale, readyScale, 0, 0);
+
+        // The minimap: a disc in the middle, Link at its centre, north up.
+        disc(c, 620, 464, 404, 0xff12110c);
+        minimap.setUnit(3.2f); minimap.round = true;
+        marker(minimap);
+        minimap.draw(c, rect(220, 64, 1020, 864), data, true);
+        minimap.round = false; minimap.setUnit(u);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(10); paint.setColor(0x80000000); c.drawCircle(620, 464, 407, paint);
+        paint.setStrokeWidth(3); paint.setColor(alpha(INK, 0xc0)); c.drawCircle(620, 464, 401, paint);
+        paint.setStyle(Paint.Style.FILL);
+        hit(320, 164, 920, 764, CODE_MINIMAP);
+        disc(c, 620, 66, 28, DISC);
+        label(c, "N", 620, 77, 30, INK, 1, 0);
+
+        // Four dials round the map.
+        JSONObject player = data.player;
+        dial(c, 300, 82, assets.ui("poe"), "◈", player.has("poes") ? number(player, "poes") : "—", "");
+        dial(c, 940, 82, assets.ui("stamina_ring"), "◯", capacity(player, "maxStamina"), extraCapacity(player, "extraStamina"));
+        Waypoint target = nearest(layer);
+        dial(c, 300, 829, assets.ui("UnderGround".equals(layer) ? "marker_lightroot" : "marker_shrine"), "◇",
+                target == null ? "—" : distance(target.distance), "");
+        hit(252, 781, 348, 877, CODE_COMPASS);
+        dial(c, 940, 829, assets.ui("battery"), "▭", capacity(player, "maxEnergy"), extraCapacity(player, "extraEnergy"));
+
+        // The gear in the corners; a tap shows the item in its inventory category, where its actions are.
+        JSONObject pouch = Snapshot.object(data.root, "pouch");
+        JSONArray weapons = Snapshot.array(pouch, "weapons"), bows = Snapshot.array(pouch, "bows");
+        JSONArray shields = Snapshot.array(pouch, "shields"), arrows = Snapshot.array(pouch, "arrows");
+        int weapon = equippedIndex(weapons), bow = equippedIndex(bows), shield = equippedIndex(shields);
+        gearCard(c, 16, 16, shields, shield, "Shield", "cat_shields", true, false, jump(2, shield));
+        gearCard(c, 1040, 16, bows, bow, "Bow", "cat_bows", true, false, jump(1, bow));
+        gearCard(c, 1040, 872, weapons, weapon, "Weapon", "cat_weapons", false, true, jump(0, weapon));
+        String ability = player.optString("ability", "None");
+        cardFrame(c, 16, 872);
+        Bitmap abilityIcon = assets.ui("ability_" + ability);
+        if (abilityIcon != null) image(c, abilityIcon, 60, 900, 156, 996, 255);
+        else label(c, "✥", 108, 970, 60, MUTED, 1, 0);
+        label(c, assets.label("abilities", ability, abilityName(ability)), 108, 1036, 26, INK, 1, 168);
+
+        // The arrows under the bow, the weapon's fused material above the weapon.
+        int arrow = equippedIndex(arrows);
+        if (arrow < 0 && arrows.length() > 0) arrow = 0;
+        drop(c, 1132, 300, true);
+        JSONObject arrowItem = arrows.optJSONObject(Math.max(0, arrow));
+        if (arrowItem != null) {
+            image(c, assets.icon(arrowItem.optString("name")), 1092, 244, 1172, 324, 255);
+            numeral(c, "×" + number(arrowItem, "count"), 1132, 358, 30, INK);
+            hit(1048, 206, 1216, 394, jump(1, bows.length() + arrow));
+        } else label(c, "No arrows", 1132, 310, 22, MUTED, 1, 136);
+        drop(c, 1132, 776, false);
+        JSONObject weaponItem = weapons.optJSONObject(Math.max(0, weapon));
+        String fuse = weapon < 0 || weaponItem == null ? "" : weaponItem.optString("fuse", "");
+        boolean fused = !fuse.isEmpty() && !fuse.equals("null");
+        label(c, "Fuse", 1132, 734, 20, MUTED, 1, 0);
+        if (fused) {
+            image(c, assets.icon(fuse), 1100, 742, 1164, 806, 255);
+            if (weaponItem.has("fuseLife")) numeral(c, number(weaponItem, "fuseLife"), 1132, 836, 26, INK);
+            hit(1048, 686, 1216, 874, jump(0, weapon));
+        } else {
+            image(c, assets.ui("ability_OneTouchBond"), 1108, 750, 1156, 798, 0x50);
+            label(c, "None", 1132, 830, 20, MUTED, 1, 0);
+        }
+
+        // Left pager: hearts, sages. A tap or a vertical swipe turns it.
+        int life = player.optInt("life", -1), maxLife = player.optInt("maxLife", -1);
+        boolean low = player.has("maxLife") && lowHearts(life, maxLife);
+        paint.setColor(PANE); c.drawRect(16, 232, 200, 700, paint);
+        paint.setColor(leftPane == 0 && low ? RED : TEAL); c.drawRect(16, 232, 22, 700, paint);
+        pagerDots(c, 206, 252, leftPane);
+        if (leftPane == 0) heartsPane(c, low); else sagesPane(c);
+        hit(16, 232, 200, 700, CODE_LEFT_PANE); onScreen(leftPaneHit, 16, 232, 200, 700);
+        image(c, assets.ui("rupee"), 90, 720, 126, 776, 255);
+        if (assets.ui("rupee") == null) label(c, "◆", 108, 764, 40, GREEN, 1, 0);
+        numeral(c, number(player, "rupees"), 108, 830, 36, INK);
+
+        // Right pager under the layer plate: armor, meal.
+        paint.setColor(PANE); c.drawRect(1032, 422, 1224, 658, paint);
+        paint.setColor(TEAL); c.drawRect(1218, 482, 1224, 658, paint);
+        if (!assets.decor(c, "title_plate", rect(1044, 428, 1216, 478), 1.5f)) { paint.setColor(0xff15140f); c.drawRect(1044, 428, 1216, 478, paint); }
+        label(c, "UnderGround".equals(layer) ? "Depths" : "Sky".equals(layer) ? "Sky" : "Surface", 1130, 464, 30, TEAL_TEXT, 1, 160);
+        paint.setColor(alpha(INK, 0x50)); c.drawRect(1048, 482, 1208, 483, paint);
+        pagerDots(c, 1016, 604, rightPane);
+        if (rightPane == 0) armorPane(c); else mealPane(c);
+        hit(1032, 422, 1224, 658, CODE_RIGHT_PANE); onScreen(rightPaneHit, 1032, 422, 1224, 658);
+
+        // Where Link is, under the map; then the command bar.
+        label(c, coordinates(), 620, 914, 28, INK, 1, 760);
+        paint.setColor(alpha(INK, 0x50)); c.drawRect(216, 944, 1024, 945, paint);
+        commandBar(c);
+
+        if (compassOpen && !event && !menu) compassCard(c, layer, target);
+        if (event || menu) {
+            // The game owns the moment: everything dims and nothing on the page can be touched, as on Breath of the Wild's
+            // page. With the pause menu open the command bar stays (+ Menu closes it again).
+            targets.subList(first, targets.size()).clear();
+            leftPaneHit.set(0, 0, 0, 0); rightPaneHit.set(0, 0, 0, 0);
+            paint.setColor(0x90000000); c.drawRect(0, 0, READY_W, READY_H, paint);
+            if (menu) {
+                paint.setColor(0xf0000000); c.drawRect(0, 424, READY_W, 504, paint);
+                paint.setColor(INK); c.drawRect(0, 424, READY_W, 427, paint); c.drawRect(0, 501, READY_W, 504, paint);
+                label(c, "Purah Pad open on the main screen", 620, 475, 32, 0xfffffee4, 1, 1100);
+                commandBar(c);
+            }
+        }
+        c.restore();
+    }
+    /** A dial round the map: icon on a disc, its value under it, and an extra (gold, smaller) under that. */
+    private void dial(Canvas c, float cx, float cy, Bitmap icon, String fallback, String value, String extra) {
+        disc(c, cx, cy, 41, DISC);
+        if (icon != null) image(c, icon, cx - 28, cy - 28, cx + 28, cy + 28, 255);
+        else label(c, fallback, cx, cy + 12, 34, MUTED, 1, 0);
+        numeral(c, value, cx, cy + 76, 34, INK);
+        numeral(c, extra, cx, cy + 104, 24, GOLD);
+    }
+    /** Stamina wheels or battery cells (1000 game units each) the player has, "—" when not read. */
+    private static String capacity(JSONObject player, String key) { return player.has(key) ? wheels(player.optDouble(key, 0)) : "—"; }
+    private static String extraCapacity(JSONObject player, String key) {
+        double extra = player.optDouble(key, 0);
+        return extra > 0 ? "+" + wheels(extra) : "";
+    }
+    private void cardFrame(Canvas c, float x, float y) {
+        RectF box = rect(x, y, x + 184, y + 192);
+        if (!assets.decor(c, "slot", box, 1.5f)) { paint.setStyle(Paint.Style.FILL); paint.setColor(0xd0121110); c.drawRect(box, paint); }
+        paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(2); paint.setColor(alpha(INK, 0x50)); c.drawRect(box, paint);
+        paint.setStyle(Paint.Style.FILL);
+    }
+    /** An equipped-gear corner: durability bar (top for shield and bow, bottom for the weapon), icon, name. */
+    private void gearCard(Canvas c, float x, float y, JSONArray list, int index, String empty, String emptyIcon, boolean barTop, boolean weapon, int code) {
+        cardFrame(c, x, y);
+        JSONObject item = index < 0 ? null : list.optJSONObject(index);
+        float iconTop = y + (barTop ? 34 : 16), cx = x + 92;
+        if (item == null) {
+            image(c, assets.ui(emptyIcon), cx - 32, y + 50, cx + 32, y + 114, 0x60);
+            label(c, empty, cx, y + 156, 24, MUTED, 1, 168);
+        } else {
+            String actor = item.optString("name");
+            Bitmap icon = assets.icon(actor);
+            if (icon != null) image(c, icon, cx - 44, iconTop, cx + 44, iconTop + 88, 255);
+            else label(c, "◇", cx, iconTop + 64, 56, GOLD, 1, 0);
+            double life = item.optDouble("life", Double.NaN);
+            boolean breaking = Double.isFinite(life) && life < 5;
+            if (Double.isFinite(life)) bar(c, x + 16, barTop ? y + 16 : y + 172, 152, life, durabilityScale(list, item), breaking ? RED : INK);
+            if (weapon && breaking) label(c, "Breaking!", cx, iconTop + 122, 28, 0xffff4530, 1, 168);
+            else twoLines(c, assets.itemName(actor), cx, iconTop + 116, 168, 22, INK);
+        }
+        hit(x, y, x + 184, y + 192, code);
+    }
+    /** A round well hanging off a corner card (the arrows under the bow, the fuse above the weapon). */
+    private void drop(Canvas c, float cx, float cy, boolean up) {
+        paint.setColor(alpha(INK, 0x50)); paint.setStrokeWidth(3);
+        c.drawLine(cx, up ? cy - 72 : cy + 72, cx, up ? cy - 92 : cy + 96, paint);
+        disc(c, cx, cy, 72, 0xe01b1a14);
+    }
+    private void pagerDots(Canvas c, float x, float y, int current) {
+        paint.setStyle(Paint.Style.FILL);
+        for (int i = 0; i < 2; i++) { paint.setColor(i == current ? INK : alpha(INK, 0x40)); c.drawRect(x, y + i * 22, x + 10, y + i * 22 + 10, paint); }
+    }
+    private void heartsPane(Canvas c, boolean low) {
+        label(c, "Hearts", 111, 274, 28, INK, 1, 168);
+        JSONObject player = data.player;
+        if (!player.has("maxLife")) { label(c, "—", 111, 470, 34, MUTED, 1, 0); return; }
+        int max = Math.max(0, player.optInt("maxLife", 0)), life = Math.max(0, player.optInt("life", 0));
+        int extra = Math.max(0, player.optInt("extraLife", 0)), broken = Math.max(0, player.optInt("breakLife", 0));
+        int total = Math.min(60, (max + extra + 3) / 4), cols = 4;
+        float cell = 40;
+        for (; cols <= 8; cols++) {
+            cell = Math.min(40, 166f / cols);
+            if ((total + cols - 1) / cols * cell <= 336) break;
+        }
+        float left = 28 + (166 - cols * cell) / 2;
+        for (int i = 0; i < total; i++) {
+            float hx = left + i % cols * cell, hy = 296 + i / cols * cell, inset = cell * .08f;
+            heartCell(c, rect(hx + inset, hy + inset, hx + cell - inset, hy + cell - inset), i, max, life, extra, broken);
+        }
+        numeral(c, hearts(life) + " / " + hearts(max), 111, 678, 28, low ? RED : INK);
+    }
+    private void sagesPane(Canvas c) {
+        label(c, "Sages", 111, 274, 28, INK, 1, 168);
+        JSONArray sages = Snapshot.array(data.root, "sages");
+        for (int i = 0; i < SAGE_IDS.length; i++) {
+            JSONObject sage = null;
+            for (int s = 0; s < sages.length(); s++) {
+                JSONObject found = sages.optJSONObject(s);
+                if (found != null && SAGE_IDS[i].equals(found.optString("id"))) sage = found;
+            }
+            float y = 298 + i * 78;
+            boolean joined = sage != null && sage.optBoolean("joined");
+            Bitmap icon = assets.ui("sage_" + SAGE_IDS[i]);
+            if (icon != null) image(c, icon, 32, y, 88, y + 56, joined ? 255 : 0x50);
+            else label(c, "◇", 60, y + 44, 40, joined ? GREEN : MUTED, 1, 0);
+            double cooldown = sage == null ? 0 : sage.optDouble("cooldown", 0);
+            String status = !joined ? "—" : cooldown > 0 ? Math.round(cooldown) + "s" : sage.optBoolean("summoned") ? "With you" : "Away";
+            label(c, status, 96, y + 38, 22, !joined ? MUTED : cooldown > 0 ? GOLD : sage.optBoolean("summoned") ? TEAL_TEXT : INK, 0, 96);
+        }
+    }
+    private void armorPane(Canvas c) {
+        label(c, assets.label("ui", "armor", "Armor"), 1128, 516, 24, INK, 1, 170);
+        JSONArray worn = data.items(3);
+        int shown = 0;
+        for (int i = 0; i < worn.length() && shown < 3; i++) {
+            JSONObject item = worn.optJSONObject(i);
+            if (item == null || !item.optBoolean("equipped")) continue;
+            float x = 1046 + shown * 56;
+            Bitmap icon = assets.icon(item.optString("name"));
+            if (icon != null) image(c, icon, x, 540, x + 52, 592, 255); else label(c, "◇", x + 26, 580, 34, GOLD, 1, 0);
+            shown++;
+        }
+        if (shown == 0) label(c, data.root.optJSONObject("pouch") != null ? "None" : "—", 1128, 576, 22, MUTED, 1, 170);
+    }
+    private void mealPane(Canvas c) {
+        label(c, "Meal", 1128, 516, 24, INK, 1, 170);
+        JSONObject buff = Snapshot.object(data.player, "cookBuff");
+        if (!buff.has("id") && !buff.has("type")) { label(c, "None", 1128, 576, 22, MUTED, 1, 170); return; }
+        String type = buff.optString("type");
+        Bitmap icon = assets.ui("effect_" + type);
+        if (icon != null) image(c, icon, 1046, 534, 1090, 578, 255); else label(c, "✦", 1068, 570, 34, GOLD, 1, 0);
+        label(c, type.isEmpty() ? "Meal effect" : assets.label("effects", type, AssetStore.humanize(type)), 1098, 562, 20, GOLD, 0, 112);
+        label(c, "Lv " + buff.optInt("level") + " · " + duration(buff.optDouble("time")), 1128, 620, 24, INK, 1, 170);
+    }
+    private void commandBar(Canvas c) {
+        String[] labels = {"Inventory", "Map", "− Map", "+ Menu"};
+        int[] codes = {1, 2, 20, 21};
+        for (int i = 0; i < labels.length; i++) {
+            float x = 252 + i * 188;
+            RectF box = rect(x, 956, x + 172, 1060);
+            if (!assets.decor(c, "tab", box, 1.5f)) { paint.setStyle(Paint.Style.FILL); paint.setColor(0xff15140f); c.drawRect(box, paint); }
+            paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(2); paint.setColor(alpha(INK, i < 2 ? 0x90 : 0x50)); c.drawRect(box, paint);
+            paint.setStyle(Paint.Style.FILL);
+            label(c, labels[i], x + 86, 1019, 30, i < 2 ? INK : MUTED, 1, 160);
+            hit(x, 956, x + 172, 1060, codes[i]);
+        }
+    }
+    /** The compass card over the map: which way and how far to the nearest shrine (Lightroot in the Depths). */
+    private void compassCard(Canvas c, String layer, Waypoint target) {
+        paint.setStyle(Paint.Style.FILL); paint.setColor(0xd8000000); c.drawCircle(620, 464, 400, paint);
+        boolean depths = "UnderGround".equals(layer);
+        label(c, depths ? "Nearest Lightroot" : "Nearest shrine", 620, 330, 30, 0xffbba778, 1, 560);
+        if (target == null) label(c, "Not known here", 620, 474, 30, MUTED, 1, 560);
+        else {
+            label(c, assets.label("places", target.label, ""), 620, 376, 32, INK, 1, 600);
+            double a = Math.toRadians(target.bearing);
+            float sx = (float)Math.sin(a), sy = (float)-Math.cos(a);
+            path.reset();
+            path.moveTo(620 + sx * 84, 464 + sy * 84);
+            path.lineTo(620 - sy * 34 - sx * 44, 464 + sx * 34 - sy * 44);
+            path.lineTo(620 - sx * 22, 464 - sy * 22);
+            path.lineTo(620 + sy * 34 - sx * 44, 464 - sx * 34 - sy * 44);
+            path.close();
+            paint.setColor(TEAL); c.drawPath(path, paint);
+            numeral(c, distance(target.distance), 620, 610, 44, INK);
+        }
+        label(c, "Tap to close", 620, 680, 22, MUTED, 1, 0);
+        hit(220, 64, 1020, 864, CODE_CARD_CLOSE);
+    }
+
     private int capacityCount(String baseKey, String extraKey) {
         return (int)Math.min(32, Math.ceil(Math.max(0, data.player.optDouble(baseKey, 0)) / 1000)
                 + Math.ceil(Math.max(0, data.player.optDouble(extraKey, 0)) / 1000));
@@ -511,29 +921,33 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
         int columns = Math.max(1, (int)(width / dp(22))), total = Math.min(60, (max + extra + 3) / 4);
         for (int i = 0; i < total; i++) {
             float hx = x + i % columns * dp(22), hy = y + i / columns * dp(22);
-            boolean yellow = i * 4 >= max;
-            int filled = Math.max(0, Math.min(4, (yellow ? max + extra : life) - i * 4));
-            boolean gloom = !yellow && i * 4 + 4 > max - broken;
-            RectF box = rect(hx, hy, hx + dp(18), hy + dp(18));
-            // A change of the hearts shows for a moment: the ones that changed swell and settle (Motion.heartScale).
-            float swell = motion.heartScale(i, frameNow);
-            c.save();
-            if (swell != 1) c.scale(swell, swell, box.centerX(), box.centerY());
-            heart(c, box, 0xff404941);
-            if (filled > 0) { c.save(); c.clipRect(box.left, box.top, box.left + box.width() * filled / 4, box.bottom); heart(c, box, yellow ? 0xffead375 : 0xffe7796b); c.restore(); }
-            if (gloom) {
-                Bitmap damaged = assets.ui("heart_broken");
-                if (damaged != null) {
-                    paint.setColor(Color.WHITE); paint.setColorFilter(HEART_BROKEN);
-                    c.drawBitmap(damaged, null, box, paint); paint.setColorFilter(null);
-                } else {
-                    heart(c, box, 0xff462e35); paint.setColor(0xffa45660); paint.setStrokeWidth(dp(1.5f));
-                    c.drawLine(hx + dp(9), hy + dp(3), hx + dp(6), hy + dp(9), paint);
-                    c.drawLine(hx + dp(6), hy + dp(9), hx + dp(11), hy + dp(14), paint);
-                }
-            }
-            c.restore();
+            heartCell(c, rect(hx, hy, hx + dp(18), hy + dp(18)), i, max, life, extra, broken);
         }
+    }
+    /** Heart i of the row: quarters filled, yellow past the maximum, gloom-damaged where breakLife reaches. */
+    private void heartCell(Canvas c, RectF box, int i, int max, int life, int extra, int broken) {
+        boolean yellow = i * 4 >= max;
+        int filled = Math.max(0, Math.min(4, (yellow ? max + extra : life) - i * 4));
+        boolean gloom = !yellow && i * 4 + 4 > max - broken;
+        // A change of the hearts shows for a moment: the ones that changed swell and settle (Motion.heartScale).
+        float swell = motion.heartScale(i, frameNow);
+        c.save();
+        if (swell != 1) c.scale(swell, swell, box.centerX(), box.centerY());
+        heart(c, box, 0xff404941);
+        if (filled > 0) { c.save(); c.clipRect(box.left, box.top, box.left + box.width() * filled / 4, box.bottom); heart(c, box, yellow ? 0xffead375 : 0xffe7796b); c.restore(); }
+        if (gloom) {
+            Bitmap damaged = assets.ui("heart_broken");
+            if (damaged != null) {
+                paint.setColor(Color.WHITE); paint.setColorFilter(HEART_BROKEN);
+                c.drawBitmap(damaged, null, box, paint); paint.setColorFilter(null);
+            } else {
+                float hx = box.left, hy = box.top, k = box.width() / 18;
+                heart(c, box, 0xff462e35); paint.setColor(0xffa45660); paint.setStrokeWidth(1.5f * k);
+                c.drawLine(hx + 9 * k, hy + 3 * k, hx + 6 * k, hy + 9 * k, paint);
+                c.drawLine(hx + 6 * k, hy + 9 * k, hx + 11 * k, hy + 14 * k, paint);
+            }
+        }
+        c.restore();
     }
     private void heart(Canvas c, RectF b, int color) {
         Bitmap image = assets.ui(color == 0xffead375 ? "heart_yellow" : color == 0xffe7796b ? "heart" : "heart_empty");
@@ -938,6 +1352,11 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
                 lastX = x; lastY = y; return true;
             case MotionEvent.ACTION_UP:
                 if (!dragging && pressed >= 0) { activate(pressed); performClick(); }
+                else if (readyShown && dragging && Math.abs(y - downY) > dp(40) && Math.abs(y - downY) > Math.abs(x - downX)) {
+                    // The main page's pagers (two pages each) turn with a vertical swipe as well as a tap.
+                    if (leftPaneHit.contains(downX, downY)) { leftPane = 1 - leftPane; invalidate(); }
+                    else if (rightPaneHit.contains(downX, downY)) { rightPane = 1 - rightPane; invalidate(); }
+                }
                 else if (page == 1 && Math.abs(x - downX) > dp(80) && Math.abs(x - downX) > Math.abs(y - downY) * 1.5f) {
                     category = (category + (x < downX ? 1 : 7)) % 8; selection = -1; scroll = 0; poller.requestFull(); invalidate();
                 }
@@ -948,6 +1367,11 @@ public final class CompanionView extends View implements SnapshotPoller.Listener
     }
     private void activate(int code) {
         if (code < 3) setPage(code);
+        else if (code == CODE_LEFT_PANE) leftPane = (leftPane + 1) % 2;
+        else if (code == CODE_RIGHT_PANE) rightPane = (rightPane + 1) % 2;
+        else if (code == CODE_COMPASS) compassOpen = !compassOpen;
+        else if (code == CODE_CARD_CLOSE) compassOpen = false;
+        else if (code == CODE_MINIMAP) setPage(2);
         else if (code == 20 || code == 21) poller.action(1, code == 20 ? 11 : 10);
         else if (code >= CODE_JUMP) {
             // Adventure equipment card: show that item on the Inventory page.

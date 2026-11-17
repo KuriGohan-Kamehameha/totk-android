@@ -22,6 +22,8 @@ final class MapRenderer {
     boolean following = true;
     String layer = "Ground";
     boolean automaticLayer = true;
+    /** The main page's round minimap: a circle, framed by the page itself (no map frame or north plate of its own). */
+    boolean round;
     private float cx, cy;
     private double minX, maxX, minZ, maxZ;
 
@@ -60,7 +62,7 @@ final class MapRenderer {
         cx = bounds.centerX(); cy = bounds.centerY();
         pixelsPerWorld = Math.min(bounds.width() / (float)(maxX - minX), bounds.height() / (float)(maxZ - minZ)) * (mini ? 9 : zoom);
         canvas.save();
-        if (mini && !assets.hasDecor("map_frame")) {
+        if (mini && (round || !assets.hasDecor("map_frame"))) {
             path.reset(); path.addCircle(cx, cy, bounds.width() / 2, Path.Direction.CW); canvas.clipPath(path);
         } else canvas.clipRect(bounds);
         canvas.drawColor(assets.color("background", Color.rgb(24, 36, 33)));
@@ -95,7 +97,7 @@ final class MapRenderer {
         markers(canvas, Snapshot.array(dynamic, "stamps"), false, false, bounds);
         if (!mini) markers(canvas, assets.markers, false, true, bounds);
         if (Double.isFinite(px) && Double.isFinite(pz) && layer.equals(data.player.optString("layer", "Ground"))) {
-            float sx = x(px), sy = y(pz), radius = (mini ? 9 : 11) * density;
+            float sx = x(px), sy = y(pz), radius = (round ? 16 : mini ? 9 : 11) * density;
             canvas.save();
             canvas.rotate((float)(marked && !Double.isNaN(markedHeading) ? markedHeading : data.player.optDouble("heading", 0)), sx, sy);
             Bitmap player = assets.ui("map_player");
@@ -115,6 +117,7 @@ final class MapRenderer {
             canvas.restore();
         }
         canvas.restore();
+        if (round) return;
         if (!assets.decor(canvas, "map_frame", bounds, density)) {
             paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(2 * density); paint.setColor(assets.color("gold", 0xffaa9562));
             if (mini) canvas.drawCircle(cx, cy, bounds.width() / 2, paint); else canvas.drawRect(bounds, paint);

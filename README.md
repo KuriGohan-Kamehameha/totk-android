@@ -45,23 +45,23 @@ What is ported, what differs from the Tears of the Kingdom build and what is unt
 
 This is the game you promised us, not the one you delivered.
 
-There are many of us who will never forget having waited 7 years for an original Zelda Wii U game only to be handed a
-port of a Switch game and a pat on the ass out the door, 水臭い野郎どもめ。
+Many of us will never forget waiting seven years for an original Zelda game on the Wii U, only to be handed a port of
+a Switch game and a pat on the ass on the way out the door. 水臭い野郎どもめ。
 
-E3の時の景色はしっかり覚える。青沼さんたちが見せたものを忘れない。我らを裏切ったの。
+E3の時の光景はしっかり覚えている。青沼さんたちが見せてくれたものは忘れない。お前らは我らを裏切ったな。
 
-The AYN Thor is arguably a spiritual successor to the 3DS, and the direction Nintendo would have gone in if they'd had
-any stones. そうだ、玉持ってないだと言ったよ。
+The AYN Thor is arguably a spiritual successor to the 3DS, and the direction Nintendo would have taken if it had had
+any stones. そうだ、玉なしだって言ったんだよ。
 
-In a timeline where Nintendo did things properly and didn't hate their fans, they'd have released a game something more
-like this, honouring what they showed off and promised.
+In a timeline where Nintendo did things properly and didn't hate its fans, it would have released something more like
+this, honouring what it showed off and promised.
 
-Nintendo, it is our sincere hope that people choose our experience over yours, and you learn a few lessons from us on
-how to make good on your promises to others.
+Nintendo, it is our sincere hope that people choose our experience over yours, and that you learn a few lessons from us
+about making good on your promises.
 
-Oh, and you can be sure that we will do the same to the Switch 2 versions of your games at some point.
+Oh, and you can be sure we'll do the same to the Switch 2 versions of your games at some point.
 
-文句があるなら目にあって話せるがいい、かかってこいや。
+文句があるなら面と向かって言え。かかってこいや。
 
 ## Features
 

@@ -478,17 +478,19 @@ def check_source(apk):
         (m.group(1), m.group(2), m.group(3)) for m in
         re.finditer(r'(https://github\.com/[\w.-]+/[\w.-]+?)(?:\.git)?\s+(?:branch\s+(\S+)\s+)?commit\s+([0-9a-f]{40})\b', text)]
     problems = []
+    quiet = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}   # a missing repository must fail, not ask for a login
     with tempfile.TemporaryDirectory() as tmp:
         subprocess.run(['git', 'init', '-q', '--bare', tmp], check=True)
         for url, branch, commit in dict.fromkeys(sources):
             if commit.endswith('-dirty'):
                 problems.append(f'{url}: {commit} is not a commit (built with uncommitted changes)'); continue
             fetched = subprocess.run(['git', '-C', tmp, 'fetch', '-q', '--depth=1', '--filter=blob:none', url, commit],
-                                     capture_output=True, text=True, timeout=600)
+                                     capture_output=True, text=True, timeout=600, env=quiet)
             if fetched.returncode:
-                problems.append(f'{url}: commit {commit} cannot be fetched ({fetched.stderr.strip().splitlines()[-1:] or "no answer"})')
+                problems.append(f'{url}: commit {commit} cannot be fetched ({(fetched.stderr.strip().splitlines() or ["no answer"])[-1]})')
             if branch:
-                heads = subprocess.run(['git', 'ls-remote', '--heads', url, branch], capture_output=True, text=True, timeout=120)
+                heads = subprocess.run(['git', 'ls-remote', '--heads', url, branch], capture_output=True, text=True, timeout=120,
+                                       env=quiet)
                 if heads.returncode or not heads.stdout.strip():
                     problems.append(f'{url}: no branch {branch}')
             say(f'source: {url} {"branch " + branch + " " if branch else ""}{commit}: '

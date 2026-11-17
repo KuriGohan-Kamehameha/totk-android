@@ -1,26 +1,37 @@
-Eden Duo companion host (libduo_host.so) -- Breath of the Wild build only
-=========================================================================
+Eden Duo companion host (libduo_host.so) -- Breath of the Wild and Tears of the Kingdom builds
+==============================================================================================
 
-The Breath of the Wild build of this app contains libduo_host.so and, under assets/duo/, the Breath of the Wild
-companion package. Both come from the Eden Duo project:
+The Breath of the Wild build and the Tears of the Kingdom build of this app each contain libduo_host.so and, under
+assets/duo/, that game's companion package. They come from the Eden Duo project:
 
   Eden Duo (the dual-screen companion runtime, src/core/mods and what it needs)
       https://github.com/igawa6/eden-duo            commit 9ebc508f2ccf938487217857918a82f42c9c0304
       Copyright the Eden Duo / Eden DSMod fork authors, the Eden Emulator Project and the yuzu Emulator Project
       GPL-3.0-or-later (some files GPL-2.0-or-later)
 
-  Eden Duo Companions (the Breath of the Wild native module and its package)
-      https://github.com/igawa6/eden-duo-companions  commit 2169928d2f301aa7bb3b13777ca8a94d0e73961d
-      GPL-3.0
+  Eden Duo Companions (the title modules and their packages)
+      https://github.com/P1R4N351/eden-duo-companions  branch totk-companion
+                                                      commit 4c99f8844ddd2cfc0f5b8be7657cd0f29359961c
+      (a fork of https://github.com/igawa6/eden-duo-companions; that commit is upstream's
+      2169928d2f301aa7bb3b13777ca8a94d0e73961d plus the Tears of the Kingdom companion)
+      GPL-3.0 (GPL-3.0-or-later per file)
+        Breath of the Wild:     native/modules/01007EF00011E000.cpp, packages/BreathOfTheWild
+        Tears of the Kingdom:   native/modules/0100F2C0115B6000.cpp with totk_romfs, wonder_assets and wonder_font,
+                                packages/TearsOfTheKingdom. Its game-state reader, native/modules/totk_reader, is this
+                                app's own MIT reader (games/totk/runtime/companion_snapshot.c and its headers, copied
+                                unchanged) plus two MIT files written for the module; licence: totk_reader/LICENSE.MIT.
 
-libduo_host.so is a work based on them and is licensed under the GNU General Public License, version 3 or (at your
-option) any later version; the licence text follows. Because the Breath of the Wild APK includes this library, that
-APK as a whole is distributed under GPL-3.0-or-later. The port's own source files (the runtime, the graphics layer,
-the app, and duo/duo_port.h, the C interface the library is reached through) remain under the MIT licence of this
-project (TotK-Native.txt), which permits that combination. The Tears of the Kingdom build contains none of this.
+Each build's libduo_host.so links one of the two modules (the game's own). It is a work based on the above and is
+licensed under the GNU General Public License, version 3 or (at your option) any later version; the licence text
+follows. Because the APK includes this library, the Breath of the Wild APK and the Tears of the Kingdom APK are each,
+as a whole, distributed under GPL-3.0-or-later. The port's own source files (the runtime, the graphics layer, the app,
+and duo/duo_port.h and duo/duo_state.h, the C interface the library is reached through) remain under the MIT licence
+of this project (TotK-Native.txt), which permits that combination. Third-party code compiled into the library besides
+Eden Duo (among it zstd's decompressor, BSD) is listed with its licence in Eden-Duo-third-party.txt.
 
-The companion package ships no game art: its images are drawn by code (ASSETS.provenance.json declares each). Game
-icons, the map, the font and all text are read at run time from the player's own game files.
+The companion packages ship no game art: their images are drawn by code (ASSETS.provenance.json declares each), and
+the Tears of the Kingdom package's text files only name files of the game. Game icons, the map, the fonts and all text
+are read at run time from the player's own game files.
 
 Source. The complete corresponding source of libduo_host.so is the directory games/totk/duo of the source tree this
 app was built from, at the commit named in assets/build.txt (shown in the app's About screen): the vendored Eden Duo

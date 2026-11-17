@@ -5,9 +5,11 @@ companions and records, endpoint by endpoint, how each would be handled through 
 narrow, MIT-licensed interface owned by this repository. Both games feed it, every consumer reads it, and the per-game
 code stays below it.
 
-- **Tears of the Kingdom 1.4.3** uses its own reader and Canvas UI (MIT).
-- **Breath of the Wild 1.6.0** uses the vendored Eden Duo host, module and package (GPL-3.0). Only the BotW APK
-  carries them.
+- **Tears of the Kingdom 1.4.3** used its own reader and Canvas UI (MIT). Its app now shows the vendored Eden Duo
+  Tears of the Kingdom package instead (GPL-3.0; section 2e); the Canvas UI stays compiled but unused, and the reader
+  is what the Eden Duo module reads the game with.
+- **Breath of the Wild 1.6.0** uses the vendored Eden Duo host, module and package (GPL-3.0).
+- Both APKs carry the Eden Duo host, each with its own game's module and package (`games.toml` `duo`).
 
 The waist already exists in part: `runtime/companion_state.h` holds 8 state words. Section 3 lists what is in it today
 and what is proposed. `tests/test_companion_waist.py` keeps that table and the header from drifting apart.
@@ -70,8 +72,9 @@ Four rules decide what crosses the waist:
 3. **Nothing GPL is needed to build or read the waist.**
    - The headers are MIT and live in `R/` or as port-owned files in `D/`, as `duo_port.h`, `duo_state.h` and
      `companion_state.h` already do.
-   - The BotW adapter maps *published value names* only (`D/duo_state.h:15-21`). It contains no Eden code, and the
-     TotK build never compiles `D/` (`games.toml` `game_patches`, `gpl_companion = false`, `audit_apk.py`).
+   - The adapters map *published value names* only (`D/duo_state.h`: one table per title module, BotW's and TotK's).
+     They contain no Eden code. The runtime reaches the host only through `D/duo_port.h` and `dlopen`; nothing of `D/`
+     is linked into `libtotk.so`.
 4. **A new word is appended after the existing ones.** Word indices never move, so the Java constants
    (`J/CompanionState.java:13-14`) only grow.
 
@@ -192,6 +195,22 @@ signature to stay the same between the two samples.
 | Stale sample | last good page held as "loading" for up to 30 s (`J/SnapshotPoller.java:52-54`); actions report `stale` after 1 s without ticks | host 4 Hz idle clock | `age_ms`, rejected above 2000 ms (`J/CompanionState.java:16,37`) |
 | Companion off, no panel, activity stopped | `J/PresentationController.java:65,366,411-413` | same | shell (common) |
 | Idle timeout | none; `KEEP_SCREEN_ON` | none | — |
+
+### 2e. TotK on Eden Duo (the TotK app since the move to Eden Duo)
+
+The TotK app's second screen is the vendored Tears of the Kingdom package (`D/vendor/companions/packages/
+TearsOfTheKingdom`), drawn by the same port host as BotW's with the TotK title module linked in instead
+(`D/CMakeLists.txt` `DUO_TITLE=0100F2C0115B6000`). The module reads the game through TotK's own reader, compiled into it
+unchanged (`D/vendor/companions/native/modules/totk_reader/`, byte for byte `R/companion_snapshot.c`, `companion.h`,
+`companion_state.h`), and publishes the waist's words itself: `totk.status` is already a `COMPANION_STATE_*` number and
+`totk.state.{menu_open,life,max_life}` are -1 while no save is loaded.
+
+| ID | Endpoint | Evidence | Published as |
+|---|---|---|---|
+| E-R01 | status, menu, life, max life | the module's `Publish` (`M/0100F2C0115B6000.cpp`) from the reader's snapshot | `totk.status`, `totk.state.{menu_open,life,max_life}` → `D/duo_state.h` `duo_state_fill_totk` (the TotK adapter) |
+| E-X01 | state words to the app | `D/duo_host.cpp` `LedTap` / `LedCommit` (the running title's table, `duo_state_table`) → `R/duo_port.c` `port_state` | `R/companion_jni.c` `native_state`: the host's sample first; before it, or without the host, `companion_state()` as in 2a (T-X02) |
+| E-X02 | page | the package's own pages (`page_binds` on `totk.status`) | the native page keeps its own, as for BotW |
+| E-A01 | item actions | none yet: the module is read-only | a later step routes them to `R/companion_actions.c` through `D/duo_port.h` (DuoPort ABI 3) |
 
 ## 3. Commonality map and ledger
 

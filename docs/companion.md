@@ -1,5 +1,12 @@
 # The dual-screen companion
 
+> **Now the Eden Duo page.** TotK Native's second screen is now the Tears of the Kingdom Eden Duo page, the same
+> runtime as BotW Native's (`libduo_host.so`, GPL-3.0; [APP.md, *Dual-screen companion*](../games/totk/android/APP.md#dual-screen-companion)):
+> Breath of the Wild's main page with Tears of the Kingdom's values, plus Inventory and Map, drawn from the game's own
+> files at run time, read-only for now (no item actions; touch off unless `TOTK_DUO_TOUCH=1`). The setup no longer
+> prepares *Second-screen art*. The rest of this page describes the earlier companion (`CompanionView`), which stays
+> in the source, unused, until it is either brought back or removed.
+
 On handhelds with a built-in second display (AYN Thor, Retroid Pocket Duo), TotK Native shows a companion on that
 display while you play: Link's status, the map and the inventory. This page is the player-facing reference; the
 implementation (snapshot format, polling, the native action checks and the device evidence for each action) is in
@@ -117,9 +124,10 @@ once. Without Bifrost nothing runs: no thread, no read of the game, no broadcast
 | Title, loading, no state | nothing sent | nothing sent |
 
 The state is the second screen's common game state (`runtime/companion_state.h`: status, in game, menu open, tablet
-owned, hearts, page), which both games fill and the app reads through one getter (`CompanionNative.state`): in Tears of
-the Kingdom from the companion's snapshot reader (so only with the companion on), in Breath of the Wild from the Eden
-Duo module's published values (`duo/duo_state.h`, so only with the companion library running).
+owned, hearts, page), which both games fill and the app reads through one getter (`CompanionNative.state`): from the
+Eden Duo module's published values (`duo/duo_state.h`, one table per game, so with the companion library running);
+in Tears of the Kingdom, until the library has a sample or without it, from the companion's snapshot reader (so only
+with the companion on).
 The table and the timing are in `android/java/com/aure/totk/BifrostLooks.java`; `tests/test_android_bifrost.py` runs
 them against Bifrost's own validator and rate limiter rules.
 

@@ -275,6 +275,11 @@ says otherwise. Nothing in the BotW package needs to change, except where a row 
 
 ## 5. What changes in the repository's rules
 
+**Done** on `totk-duo` (the package vendored at P1R4N351/eden-duo-companions `4c99f88`): `games.toml` totk
+`companion = "duo"`, `gpl_companion = true` and the new per-game `duo` variable; the audit admits each game's own
+package; the setup stops offering the art (`ArtPolicy.used`, the stage's code kept); `CompanionView` stays compiled but
+unused. Item actions are a later step (DuoPort ABI 3).
+
 - **`games.toml`:**
   - `companion` becomes `duo` for TotK;
   - `gpl_companion` becomes `true` for the TotK APK;

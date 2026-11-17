@@ -32,7 +32,7 @@ Tested on the AYN Thor unless noted.
 | Game patches | `runtime/game_patches_botw.c`: exclusive loads with acquire (a job-queue race on fast cores) and the real-time frame step, both ported from MacNativeGames (MIT) |
 | Missing shaders | A draw waits for the on-device translator (`TOTK_XLATE_WAIT_MS`, default 4000) and for a compiling pipeline (`TOTK_VK_PIPE_SYNC`, default 1). The game draws some images once and keeps them, so a skipped draw stays wrong (`env_defaults` in `games/games.toml`) |
 | App identity | `games/games.toml` (GameBuild.java is generated from it): name, version label, install checks, accent colours, package, label, keys, launcher art |
-| Second screen | The Eden Duo page (`libduo_host.so`, GPL-3.0; `companion = "duo"`, `gpl_companion = true`); the TotK app keeps its own map |
+| Second screen | The Eden Duo page (`libduo_host.so`, GPL-3.0; `companion = "duo"`, `gpl_companion = true`, `duo` = `BreathOfTheWild`); the TotK app now has its own Eden Duo page the same way (`APP.md`) |
 | On-device setup | Not ported. The app's setup still imports Tears of the Kingdom only |
 
 ## Putting the game on a device (developer route)
@@ -60,7 +60,7 @@ install.json                                          # format 1, game "botw", v
 - Saves: the menu's save manager tags exports with this game's title id now, but has not been tried with its saves.
 - Other devices, other drivers, docked mode, 60 fps.
 - On `botw-upstream` (the upstream PR) the second-screen companion is left out; `common` carries the GPL-3.0 Eden Duo
-  integration, in the BotW APK only.
+  integration, in both APKs.
 - The quick-menu background fix from the TotK fork (upstream PR #44) patches TotK 1.4.3's own code and does not apply.
 - Long play. Only the opening, the Great Plateau and the menus were looked at.
 

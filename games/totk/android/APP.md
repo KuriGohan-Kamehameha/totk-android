@@ -7,7 +7,9 @@ payload: `libtotk.so` (the runtime, `runtime/frontend_android.c` under the Java 
 `libtotk_setup.so` + `libhactool.so` (the on-device setup, `android/setup`), `libtotk_xlate.so` (shader translator),
 `libtotk_turnip.so` (the pinned Mesa Turnip, only in release builds or with `--turnip`), `libtotk_lsfg.so`,
 `libdl_android.so`, `libc++_shared.so`, `classes.dex`, the app's own launcher icon (`android/app-assets/icon`), the
-open fonts, the licence texts, `assets/shader_list.tsv` and `assets/pso_keys.bin`.
+open fonts, the licence texts, `assets/shader_list.tsv` and `assets/pso_keys.bin`, and the second screen's Eden Duo
+companion: `libduo_host.so` with the Tears of the Kingdom package under `assets/duo/TearsOfTheKingdom/dualscreen`
+(GPL-3.0-or-later; see *Dual-screen companion* below for what that makes of the APK's licence).
 
 The launcher activity is `com.aure.totk.setup.SetupActivity` (process `:setup`, with the foreground service
 `SetupService`, `foregroundServiceType="dataSync"`). It writes the game folder (`Android/data/com.aure.totk/files`:
@@ -1481,6 +1483,29 @@ runtime objects even in the same output directory. The APK-only packer also acce
 manifest; it does not recompile a supplied native library, whose build kind must already match.
 
 ## Dual-screen companion
+
+**Since the move to Eden Duo** (`games/games.toml`: `companion = "duo"`, `gpl_companion = true`, `duo` =
+`TearsOfTheKingdom` / `native/modules/0100F2C0115B6000.cpp`), the second screen of this app is the Tears of the
+Kingdom Eden Duo page, drawn by `libduo_host.so` into `DuoSurfaceView`, exactly as the Breath of the Wild app does
+(`BOTW.md`): Eden Duo's runtime, linked with the Tears of the Kingdom title module (vendored from
+P1R4N351/eden-duo-companions, `games/totk/duo/vendor/README.md`), started by `runtime/duo_port.c` from the game's
+frame end and reading the game through this app's own MIT reader (`companion_snapshot.c`, compiled into the module
+unchanged). The page is Breath of the Wild's Ready page with Tears of the Kingdom's values, plus TotK's Inventory and
+Map; it is read-only (item actions come in a later step, through the port's interface) and touch is off unless
+`TOTK_DUO_TOUCH=1`, as for Breath of the Wild. `TOTK_DUO=0` turns it off, `TOTK_DUO=module` logs the module's values
+instead. The stick LEDs and the shell take the common state from the host's samples (`duo/duo_state.h`, Tears of the
+Kingdom's table) and, until the host has one or without it, from `companion_state()` as before. The setup no longer
+offers, builds or updates the second-screen art (`ArtPolicy.used`); the art stage and its generator stay in the source.
+
+**Licence.** `libduo_host.so` is GPL-3.0-or-later, so every TotK Native APK built from this point on is, as a whole,
+distributed under GPL-3.0-or-later (`games/totk/duo/NOTICE.txt`, packed as `assets/licenses/Eden-Duo.txt`): a release
+must come with its complete corresponding source, the commit named in `assets/build.txt` (About), public wherever the
+APK is published, and the vendored companions' commit must be public too. `build_release.py` refuses a release from a
+tree with uncommitted changes. The runtime, the Java app and the tools stay MIT; APKs released before this change are
+unaffected.
+
+**The MIT companion below** (`CompanionView`, the snapshot JSON, item actions, the setup's art) stays compiled into the
+app but is not shown: what follows describes it as it was, for the time it comes back or is removed.
 
 The Android build discovers the SDK via `--android-sdk`, `ANDROID_HOME`, `ANDROID_SDK_ROOT`, then `~/Android/Sdk`.
 It uses the newest installed platform (at least API 33) and build-tools, with Java 17 source compatibility.

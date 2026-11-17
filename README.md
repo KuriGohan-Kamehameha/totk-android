@@ -164,8 +164,10 @@ On the AYN Thor, the second screen shows the **Eden Duo** companion's Sheikah Sl
 drawn by the Eden Duo companion runtime built into the app (`libduo_host.so`, GPL-3.0). The page dims during cutscenes
 and dialogue, as in Eden Duo. Touch on the second screen and the companion's item actions are not finished yet.
 
-The Tears of the Kingdom app keeps its own map and inventory screen and does not include the Eden Duo code. Both screens
-read one shared game state; how the two are being brought onto one common layer: [docs/companion-waist.md](docs/companion-waist.md).
+The Tears of the Kingdom app now shows its own Eden Duo page the same way (the Tears of the Kingdom companion package,
+built on Breath of the Wild's main page; read-only, no item actions yet), so it includes the Eden Duo code too. Its
+earlier MIT map and inventory screen stays in the source, unused for now. Both apps read one shared game state; how the
+two are being brought onto one common layer: [docs/companion-waist.md](docs/companion-waist.md).
 
 ## Stick LEDs (Bifrost)
 
@@ -248,8 +250,8 @@ This project builds on the work of others:
 - **[kitcatkode/MacNativeGames](https://github.com/kitcatkode/MacNativeGames)**, **[D2R Mobile](https://github.com/jhaizhou-ops/d2r-mobile)**
   (MIT), **Ryujinx** (MIT), **[Mesa](https://mesa3d.org) Turnip** (MIT) and the other components credited in
   [docs/totk-native.md](docs/totk-native.md#credits).
-- **Eden Duo** and its companions (GPL-3.0): the second-screen companion runtime and its Breath of the Wild pages
-  (`games/totk/duo`).
+- **Eden Duo** and its companions (GPL-3.0): the second-screen companion runtime and its Breath of the Wild and Tears
+  of the Kingdom pages (`games/totk/duo`).
 - **[Bifrost](https://github.com/KuriGohan-Kamehameha/Bifrost)** (GPL-3.0): the stick LED app the LED bridge talks to.
 - The decompilation and research communities whose notes these projects build on.
 
@@ -259,7 +261,8 @@ and shown in the app under *About → Open-source licences*.
 ## License
 
 MIT (see [LICENSE](LICENSE)), except the Eden Duo companion integration under `games/totk/duo`, which is GPL-3.0; the
-BotW Native APK, which includes it, is distributed under GPL-3.0-or-later. Third-party code keeps its own license:
+BotW Native APK and the TotK Native APK, which both include it, are distributed under GPL-3.0-or-later (each release
+with its corresponding source: the commit named in the APK's About screen). Third-party code keeps its own license:
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Legal

@@ -598,19 +598,25 @@ class AndroidBifrostTests(unittest.TestCase):
         self.assertNotIn('android.', STATE.read_text())
 
     def test_one_state_source_for_every_build(self):
-        # One BifrostState, fed by the common state's one getter; a game build only says whether its tablet can be missing.
+        # One BifrostState, fed by the common state's one getter; the game's variables (games/games.toml) say which colour
+        # table it uses and whether its tablet can be missing.
+        import sys
+        sys.path.insert(0, str(ROOT / 'tools'))
+        import games
         source = (JAVA / 'BifrostState.java').read_text()
         self.assertIn('SOURCE.state(WORDS)', source)
         self.assertIn('BifrostLooks.fromState', source)
-        self.assertIn('CompanionContent.TABLET_CAN_BE_MISSING ? BifrostLooks.BOTW : BifrostLooks.TOTK', source)
-        botw = ROOT / 'games/totk/android/java-botw/com/aure/totk'
-        self.assertFalse((botw / 'BifrostState.java').exists())
-        self.assertIn('TABLET_CAN_BE_MISSING = false', (JAVA / 'companion/CompanionContent.java').read_text())
-        self.assertIn('TABLET_CAN_BE_MISSING = true', (botw / 'companion/CompanionContent.java').read_text())
+        self.assertIn('"BOTW".equals(GameBuild.BIFROST_LOOKS) ? BifrostLooks.BOTW : BifrostLooks.TOTK', source)
+        self.assertFalse((ROOT / 'games/totk/android/java-botw').exists())
+        self.assertIn('TABLET_CAN_BE_MISSING = GameBuild.TABLET_CAN_BE_MISSING', (JAVA / 'companion/CompanionContent.java').read_text())
+        self.assertEqual([games.values(g)['tablet_can_be_missing'] for g in ('totk', 'botw')], [False, True])
+        self.assertEqual([games.values(g)['bifrost_looks'] for g in ('totk', 'botw')], ['TOTK', 'BOTW'])
+        self.assertIn('TABLET_CAN_BE_MISSING = false', games.java('totk'))
+        self.assertIn('TABLET_CAN_BE_MISSING = true', games.java('botw'))
         looks = LOOKS.read_text()
         self.assertNotIn('fromSnapshot', looks)
         self.assertNotIn('fromDuo', looks)
-        self.assertNotIn('nativeLedState', (botw / 'companion/DuoSurfaceView.java').read_text())
+        self.assertNotIn('nativeLedState', (JAVA / 'companion/DuoSurfaceView.java').read_text())
         # The names the native host keeps are the ones the title module publishes, in the order duo_state_fill reads them.
         header = (ROOT / 'games/totk/duo/duo_state.h').read_text()
         names = header.split('#define DUO_STATE_NAMES', 1)[1].split('\n\n', 1)[0].replace('\\', ' ')

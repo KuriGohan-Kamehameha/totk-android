@@ -29,7 +29,7 @@ ifneq ($(DEV_BUILD),0)
   endif
 endif
 DEV_BUILD_STAMP := $(OUT)/.dev-build
-# Parallel compiles of libduo_host.so (VERSION=botw160 APP=1): its translation units are large (the companion's manifest
+# Parallel compiles of libduo_host.so (APP=1 for a game with gpl_companion = true: VERSION=botw160): its translation units are large (the companion's manifest
 # parser, the BotW module), about 1 GB of compiler each at the peak.
 DUO_JOBS ?= 4
 # GPU backend: vk (android/gfx/nvn_vk.c, Vulkan) or null (android/gfx/nvn_null.c, no GPU)
@@ -78,18 +78,23 @@ else
   PLATFORM_LIBS := -lpthread -ldl -lm
 endif
 
+# The games both apps are built for (games/games.toml, tools/games.py): their defines (c_defines and the env_defaults as
+# GAME_DEFAULT_*), their own runtime sources (game_patches) and whether the APK carries the GPL Eden Duo companion
+# (gpl_companion). Breath of the Wild 1.6.0 (botw160): the shared runtime and graphics layer compiled with GAME_BOTW;
+# game_patches_botw.c replaces game_patches.c, the nn::settings service its SDK asks for is linked in, and duo_port.c is
+# the runtime's side of the second-screen companion (duo/, libduo_host.so below; a C table and a dlopen).
+GAMES_PY := $(PYTHON) $(TOTK)/../../tools/games.py
+GAME_TAGS := $(shell $(GAMES_PY) list | cut -d' ' -f2)
 ifeq ($(VERSION),v0)
   VDEF :=
   PATCHES := runtime/game_patches.c
-else ifeq ($(VERSION),v143)
-  VDEF := -DTOTK_GAME_V143=1
-  PATCHES := runtime/game_patches_v143.c
-else ifeq ($(VERSION),botw160)
-  # Breath of the Wild 1.6.0: the shared runtime and graphics layer compiled with GAME_BOTW; game_patches_botw.c replaces
-  # game_patches.c and the nn::settings service its SDK asks for is linked in.
-  # duo_port.c: the runtime's side of the second-screen companion (duo/, libduo_host.so below); a C table and a dlopen.
-  VDEF := -DGAME_BOTW=1 -DGAME_BOTW160=1
-  PATCHES := runtime/game_patches_botw.c runtime/settings_service.c runtime/aoc_romfs.c runtime/duo_port.c
+else ifneq ($(filter $(VERSION),$(GAME_TAGS)),)
+  VDEF := $(shell $(GAMES_PY) cflags $(VERSION))
+  PATCHES := $(shell $(GAMES_PY) patches $(VERSION))
+  GPL_COMPANION := $(shell $(GAMES_PY) get $(VERSION) gpl_companion)
+  ifeq ($(strip $(VDEF)),)
+    $(error tools/games.py gave no defines for VERSION=$(VERSION))
+  endif
 else
   VDEF := -DTOTK_GAME_$(shell echo $(VERSION) | tr a-z A-Z)=1
   PATCHES := runtime/game_patches.c
@@ -169,10 +174,11 @@ all: $(OUT)/totk-native
 endif
 
 # A single current-value stamp also invalidates objects when switching back to a previous build kind.
-# FORCE checks each invocation, but an unchanged value leaves the timestamp (and objects) untouched.
+# FORCE checks each invocation, but an unchanged value leaves the timestamp (and objects) untouched. VDEF is part of it,
+# so a changed per-game default in games/games.toml rebuilds the objects.
 $(DEV_BUILD_STAMP): FORCE
 	@mkdir -p $(dir $@)
-	@if [ ! -f "$@" ] || [ "$$(cat "$@")" != "$(DEV_BUILD) $(PROFILE_FP) $(PGO_ID)" ]; then printf '%s\n' '$(DEV_BUILD) $(PROFILE_FP) $(PGO_ID)' > "$@"; fi
+	@if [ ! -f "$@" ] || [ "$$(cat "$@")" != "$(DEV_BUILD) $(PROFILE_FP) $(PGO_ID) $(VDEF)" ]; then printf '%s\n' '$(DEV_BUILD) $(PROFILE_FP) $(PGO_ID) $(VDEF)' > "$@"; fi
 FORCE:
 
 # -MMD -MP: each object gets a .d file listing the headers it read, so changing a header (a struct in vk_int.h, say)
@@ -223,7 +229,7 @@ endif
 # The Eden Duo companion host for the Breath of the Wild app (duo/CMakeLists.txt): Eden Duo's runtime and its BotW module,
 # C++23 and GPL-3.0-or-later, in a library of its own that the runtime opens with dlopen (runtime/duo_port.c). libtotk.so
 # links none of it and starts without it.
-ifeq ($(TARGET)-$(APP)-$(VERSION),android-1-botw160)
+ifeq ($(TARGET)-$(APP)-$(GPL_COMPANION),android-1-true)
 DUO := $(TOTK)/duo
 DUO_INPUTS := $(shell find $(DUO) -type f -not -path '*/packages/*' -not -name '*.md')
 all: $(OUT)/libduo_host.so

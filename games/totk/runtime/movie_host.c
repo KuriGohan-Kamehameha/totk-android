@@ -78,12 +78,13 @@ static uint64_t (*g_clock)(void) = now_ns;
 void movie_host_set_clock(uint64_t (*clock)(void)) { g_clock = clock ? clock : now_ns; }
 /* Breath of the Wild: off by default (MacNativeGames movie_host.c, 2026-10-20). That game runs at 30 fps and takes every
    frame at the movie's rate as on the console; with pacing, dropping late frames left the first tower's cutscene on a
-   black screen after its last frame: the decoder never stopped (seen again on the AYN Thor, 2026-11-16). */
-#ifdef GAME_BOTW
-#define MOVIE_PACE_DEFAULT 0
-#else
-#define MOVIE_PACE_DEFAULT 1
+   black screen after its last frame: the decoder never stopped (seen again on the AYN Thor, 2026-11-16).
+   The default is the game's (games/games.toml env_defaults, -DGAME_DEFAULT_MOVIE_PACE from the Makefile); host tests
+   and builds without it get Tears of the Kingdom's. */
+#ifndef GAME_DEFAULT_MOVIE_PACE
+#define GAME_DEFAULT_MOVIE_PACE 1
 #endif
+#define MOVIE_PACE_DEFAULT GAME_DEFAULT_MOVIE_PACE
 static int pace_on(void) { static int v = -1; if (v < 0) { const char *e = getenv("TOTK_MOVIE_PACE"); v = e ? strcmp(e, "0") != 0 : MOVIE_PACE_DEFAULT; } return v; }
 static Movie *g_movies[MAX_MOVIES];
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;

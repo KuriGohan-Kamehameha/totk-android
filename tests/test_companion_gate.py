@@ -139,6 +139,17 @@ import android.content.Context;
 public final class AssetStore {
     public static boolean available(Context context) { return true; }
 }''',
+    # The Eden Duo screen CompanionContent picks for a game whose companion is "duo" (never in this TotK build).
+    'com/aure/totk/companion/DuoSurfaceView.java': '''package com.aure.totk.companion;
+public final class DuoSurfaceView extends android.view.View implements CompanionScreen {
+    DuoSurfaceView(android.content.Context context) {}
+    static boolean available() { return false; }
+    static void prepare(android.content.Context context) {}
+    public android.view.View view() { return this; }
+    public void setPage(int page) {}
+    public int page() { return -1; }
+    public void onGameState(CompanionState state) {}
+}''',
     # CompanionContent (real, below) builds one for the controller; the gate itself never does.
     'com/aure/totk/companion/CompanionView.java': '''package com.aure.totk.companion;
 import android.content.Context;
@@ -249,6 +260,7 @@ class CompanionGate(unittest.TestCase):
             'com/aure/totk/companion/DisplayClass.java',
             'com/aure/totk/companion/ItemActions.java',
             'com/aure/totk/companion/SnapshotPoller.java',
+            'com/aure/totk/setup/GameBuild.java',              # Tears of the Kingdom's: companion "map"
         ))
         sources.append(str(FIXTURES / 'CompanionGateProbe.java'))
         cls.command([javac, '--release', '17', '-d', str(cls.classes), *sources])

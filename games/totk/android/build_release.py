@@ -5,7 +5,9 @@
                                                 [--key-pass-env VAR] [--work DIR] [-o totk-native.apk]
                                                 [--translator <android-arm64 totk_xlate>] [--android-sdk SDK]
                                                 [--version-code N] [--version-name X]   (default 1.0.0 / 10000)
-    python3 games/totk/android/build_release.py --audit <apk>        (only the content audit)
+    python3 games/totk/android/build_release.py --game {totk,botw} --flavour {fork,release,dev} --ndk <ndk> --turnip <so>
+                                                (package, label, version, key and launcher art from games/games.toml)
+    python3 games/totk/android/build_release.py --audit <apk> [--game botw]   (only the content audit)
 
 What goes in (all built here, or fetched at pinned sources, except the two prebuilt inputs named below):
   - libtotk.so (the 1.4.3 runtime, android/Makefile VERSION=v143 DEV_BUILD=0) with libopus and libvpx (pinned sources),
@@ -30,13 +32,15 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent          # games/totk/android
 TOTK = HERE.parent
 REPO = TOTK.parents[1]
-for p in (REPO, HERE / 'apk', HERE):
+for p in (REPO, REPO / 'tools', HERE / 'apk', HERE):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 from build_app import BuildError, say, run, sha256   # noqa: E402
 import audit_apk                                    # noqa: E402
+import games                                        # noqa: E402  (games/games.toml: what differs between the games)
 
-VERSION = 'v143'
+VERSION = 'v143'                # the game's version tag (games.toml nso_version); main() sets it and GAME from --game
+GAME = games.values(VERSION)    # the game's variables
 IDENTITY = []   # extra build_apk.py arguments (--package, --label) from the command line
 API = 33
 TURNIP_SHA256 = audit_apk.TURNIP_SHA256
@@ -69,13 +73,15 @@ def parse_args(argv):
     ap.add_argument('--version-code', type=int, help='default: from the version name, MAJOR*10000 + MINOR*100 + PATCH')
     ap.add_argument('--version-name', help=f'default: {APP_VERSION}')
     ap.add_argument('--jobs', type=int, default=os.cpu_count() or 4)
-    ap.add_argument('--game', choices=('v143', 'botw160'), default='v143', help='game build (default v143: Tears of the Kingdom 1.4.3)')
+    ap.add_argument('--game', default='totk', help='game: totk or botw (games/games.toml), or its version tag v143 / botw160 (default totk)')
+    ap.add_argument('--flavour', help='an app flavour of the game in games/games.toml (totk: fork, dev; botw: release, dev): its package, '
+                    'label, version and key (in TOTK_KEYS_DIR, default /root/totk-work/keys); the options below override them')
     ap.add_argument('--package', help='application id (default: build_apk.py\'s)')
     ap.add_argument('--label', help='launcher name (default: build_apk.py\'s)')
     ap.add_argument('--dev-key', action='store_true', help='debuggable build; --key is created when missing (never for a public release)')
     args = ap.parse_args(argv)
     if not args.audit:
-        missing = [n for n in ('ndk', 'turnip', 'key') if not getattr(args, n)]
+        missing = [n for n in ('ndk', 'turnip') + (() if args.flavour else ('key',)) if not getattr(args, n)]
         if missing:
             ap.error('needs ' + ', '.join('--' + n for n in missing))
     return args
@@ -132,7 +138,7 @@ def build_native(work, ndk, logs, *, release, jobs, setup=True):
     if not cxx.is_file():
         raise BuildError(f'no libc++_shared.so in the NDK ({cxx})')
     libs.append(cxx)   # libtotk_lsfg.so and Vulkan drivers built against the NDK's C++ library
-    if VERSION == 'botw160':
+    if GAME['gpl_companion']:
         libs.append(out / 'libduo_host.so')   # the Eden Duo companion host (duo/, GPL-3.0-or-later; make builds it for this game)
     if setup:
         libs += [out / 'libtotk_setup.so', out / 'libhactool.so']
@@ -264,7 +270,7 @@ def licence_texts(work, ndk, *, setup=True):
         files['libwebp.txt'] = [work / 'src/libwebp/COPYING', work / 'src/libwebp/PATENTS']
         # texture decoders and image code ported into the companion stage (texture2ddecoder, AssetStudio, mikunyan, bimg, Pillow)
         files['companion-ports.txt'] = [HERE / 'setup/companion/THIRD_PARTY_LICENSES.txt']
-    if VERSION == 'botw160':
+    if GAME['gpl_companion']:
         # libduo_host.so: Eden Duo's runtime and its Breath of the Wild module make this APK GPL-3.0-or-later as a whole;
         # the notice says so, names the vendored commits and where the corresponding source is (duo/NOTICE.txt).
         duo = t / 'duo'
@@ -282,7 +288,7 @@ def licence_texts(work, ndk, *, setup=True):
     texts['lsfg-vk-android.txt'] += ('\n\n==== SPIR-V headers (dxbc/include/spirv/thirdparty/spirv.hpp) ====\n'
                                      + line_comment(t / 'android/third_party/lsfg/third_party/dxbc/include/spirv/thirdparty/spirv.hpp') + '\n')
     texts['NVN-header.txt'] = leading_comment(t / 'third_party/d2r_gfx/gfx/nvn/include/nvn.h') + '\n'
-    if VERSION == 'botw160':
+    if GAME['gpl_companion']:
         duo = t / 'duo/vendor'
         texts['Eden-Duo-third-party.txt'] += ''.join(
             f'\n\n==== {title} ====\n{path.read_text(errors="replace").rstrip()}\n' for title, path in (
@@ -313,7 +319,7 @@ def stage_assets(stage, texts, commit=None):
     for name, text in texts.items():
         (stage / 'licenses' / name).write_text(text)
     shutil.copy2(TOTK / 'assets/shader_list.tsv', stage / 'shader_list.tsv')
-    if VERSION == 'botw160':
+    if GAME['gpl_companion']:
         # The Breath of the Wild companion package for libduo_host.so, as Eden Duo ships it minus the load plans (not
         # used yet): pages and code-drawn images, no game art (its ASSETS.provenance.json). DuoSurfaceView unpacks it.
         package = TOTK / 'duo/vendor/companions/packages/BreathOfTheWild/dualscreen'
@@ -357,14 +363,12 @@ def package(*, out, dex, libs, translator, turnip, assets, key, key_pass_env=Non
         libs[-1] = staged
     # The launcher images are rendered once from the app's artwork and committed (apk/render_launcher.py), so this build
     # needs no Pillow; a stale render (artwork changed since) is refused.
-    # Another game's build has its own recolour of the artwork (app-assets/icon/recolour_icon.py), named as its java-<game>.
-    game = '' if VERSION == 'v143' else VERSION.rstrip('0123456789')
-    icons = HERE / (f'apk/launcher-{game}' if game else 'apk/launcher')
+    # Each game has its own artwork and renders (games.toml launcher_art).
+    icons, art = REPO / GAME['launcher_art']['renders'], REPO / GAME['launcher_art']['art']
     stamp = icons / 'source.sha256'
-    art = HERE / f"app-assets/icon/{game or 'totk'}-native-1024.png"
     if not stamp.is_file() or not art.is_file() or stamp.read_text().split()[0] != sha256(art):
         raise BuildError(f'{icons} is missing or older than {art}: rerun python3 games/totk/android/apk/render_launcher.py'
-                         + (f' --icon {art} --out {icons}' if game else '') + ' (needs Pillow)')
+                         f' --game {GAME["game_id"]} (needs Pillow)')
     cmd = [sys.executable, HERE / 'apk/build_apk.py', '--dex', dex, *sum((['--lib', str(p)] for p in libs), []),
            '--ondevice-xlate', translator, '--assets', assets, '--launcher-mipmaps', icons, '--out', out, '--key', key,
            '--version-code', str(version_code), '--version-name', version_name, '--min-sdk', str(API), '--target-sdk', str(API)]
@@ -435,20 +439,42 @@ def main(argv):
     ndk = Path(args.ndk).expanduser().resolve()
     if not (ndk / 'build/cmake/android.toolchain.cmake').is_file():
         raise BuildError('--ndk must point at an Android NDK (r28)')
-    global VERSION
-    VERSION = args.game
-    IDENTITY[:] = (['--package', args.package] if args.package else []) + (['--label', args.label] if args.label else [])
-    key = args.key.expanduser().resolve()
-    if not key.is_file() and not args.dev_key:
+    global VERSION, GAME
+    try:
+        GAME = games.values(args.game)
+        flavour = games.flavour(args.game, args.flavour) if args.flavour else {}
+    except games.GameError as e:
+        raise BuildError(str(e))
+    VERSION = GAME['nso_version']
+    # A flavour supplies the identity, version and key; explicit options win.
+    package_id, label = args.package or flavour.get('package'), args.label or flavour.get('label')
+    IDENTITY[:] = (['--package', package_id] if package_id else []) + (['--label', label] if label else [])
+    dev_key = args.dev_key or flavour.get('debuggable', False)
+    version_name = args.version_name or flavour.get('version_name')
+    version_code = args.version_code or (None if dev_key else flavour.get('version_code'))
+    key = (args.key or flavour['key']).expanduser().resolve()
+    key_pass_env = args.key_pass_env
+    if not key_pass_env and not args.key and flavour.get('key_pass_file'):
+        # The flavour's key password, read from its file next to the key into this process's environment only.
+        try:
+            os.environ['TOTK_FLAVOUR_KEY_PASS'] = Path(flavour['key_pass_file']).read_text().strip()
+        except OSError as e:
+            raise BuildError(f'cannot read the key password file of {args.flavour}: {e}')
+        key_pass_env = 'TOTK_FLAVOUR_KEY_PASS'
+    if not key.is_file() and not dev_key:
         raise BuildError(f'no signing key at {key} (this build never makes one)')
+    say(f'{GAME["app_name"]} ({VERSION}{", flavour " + args.flavour if args.flavour else ""}): package {package_id or "com.aure.totk"}, '
+        f'label {label or "TotK Native"}, version {version_name or "default"}, key {key}{" (dev)" if dev_key else ""}')
     turnip = check_turnip(args.turnip)
     work = args.work.expanduser().resolve()
     logs = work / 'logs'
     logs.mkdir(parents=True, exist_ok=True)
-    out = (args.out.expanduser().resolve() if args.out else work / 'totk-native.apk')
+    default_name = (f'{(label or GAME["app_name"]).replace(" (", "-").replace(")", "").replace(" ", "-")}-{version_name}.apk'
+                    if args.flavour else 'totk-native.apk')
+    out = (args.out.expanduser().resolve() if args.out else work / default_name)
     t0 = time.time()
-    app(work=work, ndk=ndk, logs=logs, out=out, key=key, key_pass_env=args.key_pass_env, release=not args.dev_key, make_key=args.dev_key, turnip=turnip,
-        translator=args.translator, android_sdk=args.android_sdk, version_code=args.version_code, version_name=args.version_name,
+    app(work=work, ndk=ndk, logs=logs, out=out, key=key, key_pass_env=key_pass_env, release=not dev_key, make_key=dev_key, turnip=turnip,
+        translator=args.translator, android_sdk=args.android_sdk, version_code=version_code, version_name=version_name,
         jobs=args.jobs)
     say(f'done in {(time.time() - t0) / 60:.0f} min: {out} (sha256 {sha256(out)})')
 

@@ -19,7 +19,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 
-/** The second screen of the Breath of the Wild build: a Surface the native companion host (duo/duo_host.cpp in
+/** The second screen of a game whose companion is "duo" (games/games.toml; Breath of the Wild): a Surface the native companion host (duo/duo_host.cpp in
  *  libduo_host.so) draws the Eden Duo page into. This view owns nothing but the Surface: it hands it over when it
  *  exists, takes it back when it goes, and passes touches on. The page itself, its 60 Hz clock and its reads of the
  *  game all live in the native library, and so does the choice of page: to the shell (CompanionScreen) this screen

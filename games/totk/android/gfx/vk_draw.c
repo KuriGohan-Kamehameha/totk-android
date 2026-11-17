@@ -3755,15 +3755,16 @@ static unsigned pipe_wait_max(void) {
 }
 /* TOTK_VK_PIPE_SYNC=1: a draw whose pipeline is still compiling waits for it instead of being skipped. Default 1 for
    Breath of the Wild, which draws some images once and keeps them (the pause menu's captured background): a skipped draw
-   there is wrong until the game restarts. 0 elsewhere (a hitch-free skip, bounded by TOTK_VK_PIPE_WAIT_MAX). */
+   there is wrong until the game restarts. 0 elsewhere (a hitch-free skip, bounded by TOTK_VK_PIPE_WAIT_MAX).
+   The default is the game's (games/games.toml env_defaults, -DGAME_DEFAULT_VK_PIPE_SYNC from the Makefile); host tests
+   get Tears of the Kingdom's. */
+#ifndef GAME_DEFAULT_VK_PIPE_SYNC
+#define GAME_DEFAULT_VK_PIPE_SYNC 0
+#endif
 static int pipe_sync_all(void) {
     static int on = -1;
     if (on < 0) { const char *v = getenv("TOTK_VK_PIPE_SYNC");
-#ifdef GAME_BOTW
-        on = v && *v ? atoi(v) != 0 : 1;
-#else
-        on = v && *v ? atoi(v) != 0 : 0;
-#endif
+        on = v && *v ? atoi(v) != 0 : GAME_DEFAULT_VK_PIPE_SYNC != 0;
         LOGV("TOTK_VK_PIPE_SYNC=%d: draws %s for a pipeline that is still compiling", on, on ? "wait" : "are skipped"); }
     return on;
 }

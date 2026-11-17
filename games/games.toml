@@ -1,0 +1,222 @@
+# The per-game variables: everything in which the Tears of the Kingdom app and the Breath of the Wild app differ.
+#
+# Both apps are built from one branch (MAINTENANCE.md). Anything not declared here is common code and ships to both apps
+# in the same commit. A difference between the games is added here first, with its meaning and both values, and then
+# read from here (tools/games.py) by the build (Makefile, build_release.py, build_dex.py, build_apk.py,
+# render_launcher.py), by GameBuild.java (generated from this file) and by the tests. Code that still branches on the
+# game itself (C compiled per game, a script that takes the game's version) is listed under [branches] below, file by
+# file with the number of branch points and the variable they implement; tests/test_game_variables.py fails when that
+# list and the code disagree, so new divergence cannot creep in unlisted.
+#
+# Bump schema when a variable is renamed or removed (tools/games.py refuses a schema it does not know).
+schema = 1
+games = ["totk", "botw"]
+
+# ---------------------------------------------------------------- identity of the game
+
+[var.nso_version]
+meaning = "The game build's version tag: make VERSION=, the runtime's TOTK_GAME_DIR, the data folders under the game folder (extracted/, rewritten/, game-data/, shaders/), install.json 'version' and the mods folder mods/<tag>"
+totk = "v143"
+botw = "botw160"
+
+[var.game_id]
+meaning = "install.json 'game' (InstallState) and GameBuild.GAME"
+totk = "totk"
+botw = "botw"
+
+[var.title]
+meaning = "The game's name in the menu and About"
+totk = "Tears of the Kingdom"
+botw = "Breath of the Wild"
+
+[var.version_label]
+meaning = "The game version the app runs, as shown (Home chip, About, setup details)"
+totk = "1.4.3"
+botw = "1.6.0"
+
+[var.title_id]
+meaning = "The game's title id (saves export/import in SaveManager; the runtime's own copies are under [branches]: fs_host.c, services.c, duo_port.c)"
+totk = "0100F2C0115B6000"
+botw = "01007EF00011E000"
+
+[var.main_build_id]
+meaning = "Build id of the supported main (mods: exefs/<build id>.ips is applied only when it names this main; the runtime reads it from main itself, this is for docs and mod authors). TotK's 1.4.3 files are pinned by sha256 instead"
+totk = "pinned by games/totk/assets/expected-v1.4.3.json"
+botw = "8E9978D50BDD20B4C8395A106C27FFDE"
+
+[var.romfs_size]
+meaning = "Size of the merged RomFS image extracted/<tag>/romfs/romfs.bin (InstallState's install check)"
+totk = 17052625232
+botw = 15131979952
+
+[var.ondevice_setup]
+meaning = "Whether the app's own setup can import this game from a dump (false: the game folder is filled by hand, BOTW.md)"
+totk = true
+botw = false
+
+[var.docs]
+meaning = "The game's own docs page (what differs, how to stage the game)"
+totk = "games/totk/android/APP.md"
+botw = "games/totk/android/BOTW.md"
+
+# ---------------------------------------------------------------- native build
+
+[var.c_defines]
+meaning = "Compiler defines that select the game's runtime code (Makefile VDEF); every #if on them is listed under [branches]"
+totk = ["TOTK_GAME_V143=1"]
+botw = ["GAME_BOTW=1", "GAME_BOTW160=1"]
+
+[var.game_patches]
+meaning = "Runtime sources only this game links (Makefile PATCHES): its game-code patches and game-only services"
+totk = ["runtime/game_patches_v143.c"]
+botw = ["runtime/game_patches_botw.c", "runtime/settings_service.c", "runtime/aoc_romfs.c", "runtime/duo_port.c"]
+
+[var.env_defaults]
+meaning = "Defaults of runtime switches that differ (totk.env overrides either way). Passed to the compiler as GAME_DEFAULT_<name> (Makefile); the C fallback, used by host tests, is TotK's value"
+totk = { TOTK_XLATE_WAIT_MS = 0, TOTK_VK_PIPE_SYNC = 0, TOTK_MOVIE_PACE = 1 }
+botw = { TOTK_XLATE_WAIT_MS = 4000, TOTK_VK_PIPE_SYNC = 1, TOTK_MOVIE_PACE = 0 }
+
+[var.runtime_code]
+meaning = "The game's addresses, services and behaviour inside the shared runtime, rewriter and graphics layer: C compiled with this game's c_defines, and scripts given its version tag. Each file with such branches is listed under [branches]"
+totk = "#if TOTK_GAME_V143 / !GAME_BOTW branches"
+botw = "#if GAME_BOTW / GAME_BOTW160 branches"
+
+[var.shader_seed]
+meaning = "The game's shared shader list and the script that prepares its Vulkan shader seed"
+totk = { list = "games/totk/assets/shader_list.tsv", script = "games/totk/scripts/prepare_shader_seed.py" }
+botw = { list = "games/botw/assets/shader_list.tsv", script = "games/totk/scripts/prepare_botw_seed.py" }
+
+# ---------------------------------------------------------------- app
+
+[var.app_name]
+meaning = "The app's name inside its menus (GameBuild.APP); the launcher label is per flavour below"
+totk = "TotK Native"
+botw = "BotW Native"
+
+[var.accent]
+meaning = "Menu colours (GameBuild.SEL selection, ACCENT accent, SURFACE_HUE: hue the surfaces are tinted to, -1 = the design's own)"
+totk = { sel = 0xffd4ea74, accent = 0xff57dfbf, surface_hue = -1 }
+botw = { sel = 0xffa6ebff, accent = 0xff66d8fa, surface_hue = 208 }
+
+[var.launcher_art]
+meaning = "Launcher artwork and its committed density renders (apk/render_launcher.py --game writes the renders)"
+totk = { art = "games/totk/android/app-assets/icon/totk-native-1024.png", renders = "games/totk/android/apk/launcher" }
+botw = { art = "games/totk/android/app-assets/icon/botw-native-1024.png", renders = "games/totk/android/apk/launcher-botw" }
+
+[var.launcher_background]
+meaning = "Adaptive launcher icon background colour, RGB (build_apk.launcher_override, render_launcher.py)"
+totk = [11, 20, 22]
+botw = [7, 13, 24]
+
+[var.mod_manager]
+meaning = "The PC mod manager the Mods import texts name (its merge is what the import takes)"
+totk = "TKMM"
+botw = "BCML"
+
+[var.companion]
+meaning = "Second screen (CompanionContent): 'map' = TotK's own map and inventory (CompanionView), 'duo' = the Eden Duo page drawn by libduo_host.so (DuoSurfaceView). Both sit behind CompanionScreen"
+totk = "map"
+botw = "duo"
+
+[var.gpl_companion]
+meaning = "Whether the APK carries the GPL-3.0 Eden Duo companion (libduo_host.so, its package under assets/duo/, Eden licence texts). false: the build and audit_apk.py refuse all of it"
+totk = false
+botw = true
+
+[var.tablet_can_be_missing]
+meaning = "Whether the game starts without its tablet (BotW's Sheikah Slate; the stick LEDs have a look for that)"
+totk = false
+botw = true
+
+[var.bifrost_looks]
+meaning = "Row of BifrostLooks.LOOKS the stick-LED bridge uses (colour table)"
+totk = "TOTK"
+botw = "BOTW"
+
+# ---------------------------------------------------------------- app flavours: identity, version and signing key
+# key / key_pass_file are file names in the build machine's key folder (TOTK_KEYS_DIR, default /root/totk-work/keys).
+# The keys never enter git. debuggable = a dev build: --dev-key (the key is created when missing), versionCode from
+# the clock. version_code absent: MAJOR*10000 + MINOR*100 + PATCH of version_name.
+
+[flavour.totk.fork]
+package = "io.github.kurigohankamehameha.totk"
+label = "TotK Native (fork)"
+version_name = "1.0.1-fork.2"
+version_code = 10002
+key = "fork-release.p12"
+key_pass_file = "fork-release.pass"
+debuggable = false
+
+[flavour.totk.dev]
+package = "io.github.kurigohankamehameha.totk.dev"
+label = "TotK Native (dev)"
+version_name = "1.0.1-dev"
+key = "totk-dev.pem"
+debuggable = true
+
+[flavour.botw.release]
+package = "io.github.p1r4n351.botw"
+label = "BotW Native"
+version_name = "0.2.0-pre.1"
+version_code = 200
+key = "botw-release.pem"
+debuggable = false
+
+[flavour.botw.dev]
+package = "io.github.p1r4n351.botw"
+label = "BotW Native"
+version_name = "0.2.0-dev"
+key = "botw-dev.pem"
+debuggable = true
+
+# ---------------------------------------------------------------- code that still branches on the game
+# Every file whose code branches on the game itself: C on GAME_BOTW* / TOTK_GAME_V143, Python or shell on a game's tag
+# or id. n = branch points counted by tools/games.py (tests/test_game_variables.py compares), vars = what they implement.
+# 'runtime_code' = this game's addresses, services and behaviour in the shared runtime (C compiled per game).
+[branches]
+"build_app.py" = { n = 2, vars = ["runtime_code"] }
+"games/totk/Makefile" = { n = 1, vars = ["runtime_code"] }
+"games/totk/android/Makefile" = { n = 8, vars = ["c_defines", "game_patches", "gpl_companion", "runtime_code"] }
+"games/totk/android/build_android.py" = { n = 3, vars = ["runtime_code"] }
+"games/totk/android/gfx/nvn_vk.c" = { n = 1, vars = ["runtime_code"] }
+"games/totk/android/gfx/vk_post.c" = { n = 2, vars = ["runtime_code"] }
+"games/totk/android/gfx/vk_res.c" = { n = 2, vars = ["runtime_code"] }
+"games/totk/android/gfx/vk_shader.c" = { n = 1, vars = ["runtime_code"] }
+"games/totk/android/java/com/aure/totk/BifrostState.java" = { n = 1, vars = ["bifrost_looks"] }
+"games/totk/android/java/com/aure/totk/companion/CompanionContent.java" = { n = 1, vars = ["companion"] }
+"games/totk/android/setup/setup.c" = { n = 1, vars = ["ondevice_setup"] }
+"games/totk/app/launcher.m" = { n = 1, vars = ["runtime_code"] }
+"games/totk/ios/tools/build_ipa.py" = { n = 1, vars = ["runtime_code"] }
+"games/totk/runtime/account.c" = { n = 2, vars = ["runtime_code"] }
+"games/totk/runtime/aoc_romfs.c" = { n = 1, vars = ["game_patches"] }
+"games/totk/runtime/applet_host.c" = { n = 2, vars = ["runtime_code"] }
+"games/totk/runtime/audio_mixer.h" = { n = 1, vars = ["runtime_code"] }
+"games/totk/runtime/autoload.c" = { n = 1, vars = ["runtime_code"] }
+"games/totk/runtime/companion_jni.c" = { n = 2, vars = ["companion", "runtime_code"] }
+"games/totk/runtime/companion_snapshot.c" = { n = 1, vars = ["runtime_code"] }
+"games/totk/runtime/drs_framegen.h" = { n = 1, vars = ["runtime_code"] }
+"games/totk/runtime/duo_port.c" = { n = 2, vars = ["companion", "gpl_companion", "title_id"] }
+"games/totk/runtime/fps_adaptive_runtime.c" = { n = 1, vars = ["runtime_code"] }
+"games/totk/runtime/fps_hybrid_runtime.c" = { n = 1, vars = ["runtime_code"] }
+"games/totk/runtime/frontend.m" = { n = 2, vars = ["runtime_code"] }
+"games/totk/runtime/frontend_android.c" = { n = 3, vars = ["runtime_code"] }
+"games/totk/runtime/frontend_headless.c" = { n = 2, vars = ["runtime_code"] }
+"games/totk/runtime/fs_host.c" = { n = 2, vars = ["title_id", "runtime_code"] }
+"games/totk/runtime/fs_host.h" = { n = 1, vars = ["runtime_code"] }
+"games/totk/runtime/game_patches_botw.c" = { n = 3, vars = ["game_patches"] }
+"games/totk/runtime/game_version.h" = { n = 3, vars = ["nso_version", "runtime_code"] }
+"games/totk/runtime/input.c" = { n = 4, vars = ["runtime_code"] }
+"games/totk/runtime/loader.c" = { n = 11, vars = ["runtime_code"] }
+"games/totk/runtime/romfs.c" = { n = 5, vars = ["runtime_code"] }
+"games/totk/runtime/services.c" = { n = 5, vars = ["title_id", "runtime_code"] }
+"games/totk/runtime/shared_font.c" = { n = 2, vars = ["runtime_code"] }
+"games/totk/runtime/threads.c" = { n = 31, vars = ["runtime_code"] }
+"games/totk/runtime/time_host.c" = { n = 2, vars = ["runtime_code"] }
+"games/totk/runtime/world_survey.c" = { n = 4, vars = ["runtime_code"] }
+"games/totk/scripts/make_output_res_overlay.py" = { n = 1, vars = ["runtime_code"] }
+"games/totk/scripts/prepare_runtime.py" = { n = 3, vars = ["runtime_code"] }
+"games/totk/scripts/prepare_shader_seed.py" = { n = 4, vars = ["shader_seed"] }
+"games/totk/scripts/verify_rewrites.py" = { n = 3, vars = ["runtime_code"] }
+"games/totk/third_party/d2r_gfx/gfx/nvn/hle_nvn.c" = { n = 32, vars = ["runtime_code"] }
+"games/totk/third_party/d2r_gfx/gfx/nvn/nvn_mtl.m" = { n = 2, vars = ["runtime_code"] }
+"games/totk/third_party/d2r_gfx/gfx/nvn/nvn_obj.h" = { n = 1, vars = ["runtime_code"] }

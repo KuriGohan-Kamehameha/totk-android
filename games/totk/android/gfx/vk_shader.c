@@ -649,16 +649,16 @@ static void request_miss(const char *key, int st, const uint8_t *control, const 
     if (n <= 20 || n % 100 == 0) LOGV("[shader-miss] %s %s is not in the seed: its draws are skipped (request %llu %s in %s)", st == 0 ? "vs" : st == 1 ? "ps" : "cs", variant, (unsigned long long)n, background ? "queued" : "saved", dir);
 }
 
-/* 0 = never wait (the draw is skipped until the service publishes the variant). Default: 4000 for Breath of the Wild,
-   which has no prepared seed yet; 0 otherwise. */
+/* 0 = never wait (the draw is skipped until the service publishes the variant). Default: the game's (games/games.toml
+   env_defaults, -DGAME_DEFAULT_XLATE_WAIT_MS from the Makefile): 4000 for Breath of the Wild, which draws some images
+   once and keeps them; 0 for Tears of the Kingdom, also the fallback for host tests. */
+#ifndef GAME_DEFAULT_XLATE_WAIT_MS
+#define GAME_DEFAULT_XLATE_WAIT_MS 0
+#endif
 static long miss_wait_ms(void) {
     static long ms = -1;
     if (ms < 0) { const char *e = getenv("TOTK_XLATE_WAIT_MS");
-#ifdef GAME_BOTW
-        ms = e && *e ? atol(e) : 4000;
-#else
-        ms = e && *e ? atol(e) : 0;
-#endif
+        ms = e && *e ? atol(e) : GAME_DEFAULT_XLATE_WAIT_MS;
         if (ms < 0) ms = 0; if (ms > 60000) ms = 60000;
         LOGV("TOTK_XLATE_WAIT_MS=%ld: a draw whose shader is missing %s", ms, ms ? "waits for the on-device translator" : "is skipped until the translator publishes it"); }
     return ms;

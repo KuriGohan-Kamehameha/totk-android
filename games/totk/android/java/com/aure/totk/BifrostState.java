@@ -1,8 +1,8 @@
 package com.aure.totk;
 
-import com.aure.totk.companion.CompanionContent;
 import com.aure.totk.companion.CompanionNative;
 import com.aure.totk.companion.CompanionState;
+import com.aure.totk.setup.GameBuild;
 
 /** Where the Bifrost bridge reads the game from, and which colours it uses: the second screen's common game state
  *  (runtime/companion_state.h, CompanionState), the same in every game build. Tears of the Kingdom fills it from the
@@ -11,7 +11,8 @@ import com.aure.totk.companion.CompanionState;
  *  the companion library running. Without one the bridge sends nothing. */
 final class BifrostState {
     private BifrostState() { }
-    static final int GAME = CompanionContent.TABLET_CAN_BE_MISSING ? BifrostLooks.BOTW : BifrostLooks.TOTK;
+    /** The colour table, by the game's bifrost_looks variable (games/games.toml). */
+    static final int GAME = "BOTW".equals(GameBuild.BIFROST_LOOKS) ? BifrostLooks.BOTW : BifrostLooks.TOTK;
     private static final CompanionNative SOURCE = new CompanionNative();
     private static final long[] WORDS = new long[CompanionState.FIELDS];
     private static final CompanionState STATE = new CompanionState();

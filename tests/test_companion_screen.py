@@ -1,10 +1,12 @@
 """The second screen's shell contract (CompanionScreen): both games' screens behind one interface, the page round
 trip, and the shell's pump that publishes the page to the common state and tells the screen what the game does.
 
-The real CompanionView (Tears of the Kingdom), DuoSurfaceView (Breath of the Wild), both CompanionContent files and
-PresentationController's pump run here on a plain JVM over the smallest android.* that compiles them."""
+The real CompanionView (Tears of the Kingdom), DuoSurfaceView (Breath of the Wild), the one CompanionContent (which
+picks by GameBuild.COMPANION, generated from games/games.toml for each game) and PresentationController's pump run here
+on a plain JVM over the smallest android.* that compiles them."""
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,7 +14,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ANDROID = ROOT / 'games/totk/android'
 JAVA = ANDROID / 'java/com/aure/totk/companion'
-BOTW = ANDROID / 'java-botw/com/aure/totk/companion'
+sys.path.insert(0, str(ROOT / 'tools'))
+import games  # noqa: E402
 
 # android.* and org.json as far as the two screens touch them. Nothing draws: the probe never attaches a view.
 ANDROID_STUBS = {
@@ -384,20 +387,28 @@ class CompanionScreenTests(unittest.TestCase):
         self.assertNotIn('CompanionView', controller)      # the shell knows the interface, not a game's screen
         self.assertNotIn('DuoSurfaceView', controller)
 
+    def screen_classes(self, game):
+        """Both screens and the one CompanionContent, compiled with this game's generated GameBuild."""
+        shared = [JAVA / n for n in ('CompanionScreen.java', 'CompanionState.java', 'DataSource.java', 'ItemActions.java', 'Motion.java',
+                                     'CompanionView.java', 'DuoSurfaceView.java', 'CompanionContent.java')]
+        sources = self.write(game, {**ANDROID_STUBS, **TOTK_STUBS, 'com/aure/totk/companion/ScreenProbe.java': SCREEN_PROBE,
+                                    'com/aure/totk/setup/GameBuild.java': games.java(game)})
+        return self.build(game, sources + shared)
+
     def test_totk_screen_page_round_trip(self):
-        shared = [JAVA / n for n in ('CompanionScreen.java', 'CompanionState.java', 'DataSource.java', 'ItemActions.java', 'Motion.java')]
-        sources = self.write('totk', {**ANDROID_STUBS, **TOTK_STUBS, 'com/aure/totk/companion/ScreenProbe.java': SCREEN_PROBE})
-        classes = self.build('totk', sources + shared + [JAVA / 'CompanionView.java', JAVA / 'CompanionContent.java'])
+        classes = self.screen_classes('totk')
         self.assertIn('pass: companion screen totk', self.run_probe(classes, 'com.aure.totk.companion.ScreenProbe', 'totk'))
 
     def test_botw_screen_keeps_no_page_and_needs_no_library(self):
         # No libduo_host.so on the host: the class still loads and the screen still stands behind the interface.
-        native = {'com/aure/totk/companion/CompanionNative.java':
-                  'package com.aure.totk.companion; public final class CompanionNative { public static boolean isEnabled() { return true; } }'}
-        shared = [JAVA / n for n in ('CompanionScreen.java', 'CompanionState.java', 'DataSource.java')]
-        sources = self.write('botw', {**ANDROID_STUBS, **native, 'com/aure/totk/companion/ScreenProbe.java': SCREEN_PROBE})
-        classes = self.build('botw', sources + shared + [BOTW / 'DuoSurfaceView.java', BOTW / 'CompanionContent.java'])
+        classes = self.screen_classes('botw')
         self.assertIn('pass: companion screen botw', self.run_probe(classes, 'com.aure.totk.companion.ScreenProbe', 'botw'))
+
+    def test_screen_is_chosen_by_the_game_variable(self):
+        content = (JAVA / 'CompanionContent.java').read_text()
+        self.assertIn('GameBuild.COMPANION.equals("duo")', content)
+        self.assertEqual({games.values(g)['companion'] for g in ('totk', 'botw')}, {'map', 'duo'})
+        self.assertFalse((ANDROID / 'java-botw').exists())   # no per-game file overrides
 
     def test_shell_publishes_the_page_and_tells_the_screen(self):
         controller = (JAVA / 'PresentationController.java').read_text()

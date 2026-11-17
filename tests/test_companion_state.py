@@ -133,9 +133,19 @@ class CompanionStateTests(unittest.TestCase):
                     self.assertIn('#ifdef GAME_BOTW\n#include "duo_link.h"\n#endif', text)
                     continue
                 self.assertFalse(include.startswith('../duo') or include.startswith('duo'), (name, include))
+        # The Java side is common to both games (games/games.toml): only DuoSurfaceView (the port's own view, MIT) and
+        # CompanionContent, which picks it by the companion variable, name the Eden Duo page. DuoSurfaceView loads
+        # libduo_host.so only when the game's companion is "duo"; a TotK APK never carries that library (audit_apk.py).
         java = TOTK / 'android/java/com/aure/totk'
         for path in [java / 'BifrostState.java', *sorted((java / 'companion').glob('*.java'))]:
             code = re.sub(r'/\*.*?\*/|//[^\n]*', '', path.read_text(), flags=re.S)   # comments may name the other screen
+            if path.name == 'CompanionContent.java':
+                self.assertIn('DUO = GameBuild.COMPANION.equals("duo")', code)
+                self.assertIn('if (!DUO) return AssetStore.available(context);', code)
+                continue
+            if path.name == 'DuoSurfaceView.java':
+                self.assertEqual(re.findall(r'loadLibrary\("(\w+)"\)', code), ['duo_host'])
+                continue
             self.assertNotIn('Duo', code, path.name)
 
     def test_both_sides_map_onto_the_contract(self):

@@ -18,6 +18,8 @@ Needs the Python package 'cryptography'; --launcher-icon also requires Pillow.
 """
 import argparse, base64, hashlib, io, math, os, struct, sys, time, warnings, zipfile
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / 'tools'))
+import games  # noqa: E402  (games/games.toml launcher_background)
 
 ANDROID_NS = 'http://schemas.android.com/apk/res/android'
 PSO_SOURCE = Path(__file__).resolve().parents[2] / 'assets/pso_keys.tsv'
@@ -284,8 +286,14 @@ def type_chunk(type_id, count, values, *, density=0, sdk=0, key_base=0):
     return resource_chunk(0x0201, header, struct.pack(f'<{len(offsets)}I', *offsets) + entries)
 
 
-def launcher_override(path):
-    """Decode the launcher artwork (the app's own, android/app-assets/icon); return mipmaps and the 512px store PNG."""
+def launcher_background(game='totk'):
+    """The game's adaptive-icon background behind transparent artwork (games/games.toml launcher_background), RGBA."""
+    return tuple(games.values(game)['launcher_background']) + (255,)
+
+
+def launcher_override(path, background=None):
+    """Decode the launcher artwork (the app's own, android/app-assets/icon); return mipmaps and the 512px store PNG.
+    background: RGBA behind transparent artwork (default Tears of the Kingdom's, launcher_background)."""
     try:
         from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat
     except ImportError:
@@ -308,7 +316,8 @@ def launcher_override(path):
     if alpha_max == 0:
         raise SystemExit(f'--launcher-icon: {path}: image is entirely transparent')
     if alpha_min < 255:
-        background = (11, 20, 22, 255)  # Dark teal lets transparent artwork/glow read naturally.
+        # The game's dark background (TotK: teal, BotW: navy) lets transparent artwork/glow read naturally.
+        background = tuple(background) if background else launcher_background()
     else:
         corners = [ImageStat.Stat(source.crop((x, y, x + 1, y + 1))).mean
                    for x in (0, source.width - 1) for y in (0, source.height - 1)]
@@ -572,7 +581,7 @@ def build(args):
         if password is None: raise SystemExit(f'--key-pass-env: ${args.key_pass_env} is not set')
     if args.launcher_icon and args.launcher_mipmaps:
         raise SystemExit('--launcher-icon and --launcher-mipmaps are alternatives')
-    override = (launcher_override(args.launcher_icon) if args.launcher_icon else
+    override = (launcher_override(args.launcher_icon, launcher_background(args.game)) if args.launcher_icon else
                 launcher_mipmaps(args.launcher_mipmaps) if args.launcher_mipmaps else None)
     images = override[0] if override else []
     resources = icon_resources(args.package, images, adaptive=True, xml=backup_rules())
@@ -621,6 +630,7 @@ def main(argv):
     ap.add_argument('--package', default=PACKAGE)
     ap.add_argument('--label', default=LABEL)
     ap.add_argument('--launcher-icon', type=Path, help='launcher artwork PNG/JPEG to render (needs Pillow)')
+    ap.add_argument('--game', default='totk', help='game whose launcher_background (games/games.toml) --launcher-icon uses')
     ap.add_argument('--launcher-mipmaps', type=Path, help='pre-rendered launcher images (android/apk/launcher; no Pillow needed)')
     ap.add_argument('--version-code', type=int, default=int(time.time()) // 60, help='default: minutes since 1970, so each build updates the last')
     ap.add_argument('--version-name', default='0.1')

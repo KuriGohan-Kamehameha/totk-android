@@ -4,13 +4,16 @@ native libraries, our fonts and licence texts, the identifier-only pipeline key 
 the game (images, text, fonts, shaders, tables, rewritten code, companion art, the old Control-NCA launcher icon) or like
 key material. build_release.py runs it on every APK it makes and stops on any finding.
 
-    audit_apk.py [--game botw160] <apk> [<apk> ...]   exit 1 and one line per finding when something is wrong
+    audit_apk.py [--game botw] <apk> [<apk> ...]   exit 1 and one line per finding when something is wrong
 
---game botw160 (build_release.py --game botw160 passes it) also admits the Eden Duo companion host and its package, which
-only the Breath of the Wild build carries; the default audits a Tears of the Kingdom APK, where they are findings.
+--game <game> (build_release.py passes its own): a game whose gpl_companion is true in games/games.toml (botw, botw160)
+also may carry the Eden Duo companion host and its package; the default audits a Tears of the Kingdom APK, where they are
+findings.
 """
 import re, sys, zipfile
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / 'tools'))
+import games  # noqa: E402
 
 SHADER_LIST = Path(__file__).resolve().parents[2] / 'assets/shader_list.tsv'   # committed: shader hashes and bind states only
 TURNIP_SHA256 = '9b87afeb3d8d30c6a0ad5aab3e0703bc1500e0321e9f17a922106fa556389ec6'   # the pinned Mesa build, MIT
@@ -37,7 +40,7 @@ ALLOWED = [re.compile(p) for p in (
     r'assets/build\.txt',         # the source commit shown in About (build_release.stage_assets)
     r'assets/licenses/[A-Za-z0-9][A-Za-z0-9_.+-]*\.txt',
 )]
-# Breath of the Wild builds only (audit(game='botw160'), audit_apk.py --game botw160): the Eden Duo companion host and its
+# Games with gpl_companion = true only (games/games.toml: Breath of the Wild; audit(game='botw'), audit_apk.py --game botw): the Eden Duo companion host and its
 # package, both vendored in games/totk/duo/vendor (GPL-3.0-or-later; assets/licenses/Eden-Duo.txt). The package is pages
 # and code-drawn images, no game art, and every entry must be byte for byte the vendored file.
 DUO_LIB = 'libduo_host.so'
@@ -66,12 +69,12 @@ ELF_MAGIC = b'\x7fELF'
 HOST_PATH = re.compile(rb'/(home|Users)/[A-Za-z0-9_.-]+/')
 
 
-def audit(apk, game='v143'):
-    """Findings for one APK (empty when it passes). game: the build it claims to be; only 'botw160' may carry the Eden
-    Duo companion (ALLOWED_BOTW)."""
+def audit(apk, game='totk'):
+    """Findings for one APK (empty when it passes). game: the build it claims to be (id or version tag); only a game with
+    gpl_companion may carry the Eden Duo companion (ALLOWED_BOTW)."""
     import hashlib
     problems = []
-    allowed = ALLOWED + (ALLOWED_BOTW if game == 'botw160' else [])
+    allowed = ALLOWED + (ALLOWED_BOTW if games.values(game)['gpl_companion'] else [])
     with zipfile.ZipFile(apk) as z:
         names = z.namelist()
         if len(set(names)) != len(names):
@@ -128,7 +131,7 @@ def audit(apk, game='v143'):
 def main(argv):
     if not argv:
         sys.exit(__doc__)
-    game = 'v143'
+    game = 'totk'
     if argv[0] == '--game':
         game, argv = argv[1], argv[2:]
     failed = False

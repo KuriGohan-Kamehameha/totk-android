@@ -12,7 +12,8 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 GAME = ROOT / 'games/totk'
-SOURCES = [GAME / 'android/java/com/aure/totk/setup/ModImport.java', GAME / 'tests/mods/ModProbe.java']
+SOURCES = [GAME / 'android/java/com/aure/totk/setup/ModImport.java', GAME / 'tests/mods/ModProbe.java',
+           GAME / 'android/java/com/aure/totk/setup/GameBuild.java']   # Tears of the Kingdom's (mods/v143)
 MERGE = {'romfs/Pack/Actor/Player.pack.zs': b'p' * 5000, 'romfs/RSDB/Tag.Product.143.rstbl.byml.zs': b'tag',
          'romfs/UltraCam/maxlastbreath.ini': b'[Console]\n', 'romfs/Model/desktop.ini': b'junk', 'romfs/.DS_Store': b'junk',
          'romfs/manifest.tsv': b'# from elsewhere\n', 'romfs/Pack/manifest.tsv': b'a file of that name deeper down is a game file',
@@ -170,7 +171,7 @@ class ModImportTests(unittest.TestCase):
         frontend = (GAME / 'runtime/frontend_android.c').read_text()
         self.assertIn('a->internalDataPath', frontend[frontend.index('Player mods (runtime/romfs.c'):][:2500])
         self.assertIn('"mods/" + VERSION', SOURCES[0].read_text())
-        self.assertIn('VERSION = "v143"', SOURCES[0].read_text())
+        self.assertIn('VERSION = GameBuild.VERSION', SOURCES[0].read_text())   # mods/<the game's tag>: v143, botw160
 
 
 if __name__ == '__main__':

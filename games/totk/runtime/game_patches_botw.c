@@ -6,6 +6,7 @@
 #include "game_patches.h"
 #include "game_version.h"
 #include "duo_link.h"
+#include "mod_ips.h"
 
 /* ---- The real-time frame step, from MacNativeGames games/totk/runtime/game_patches_botw.c (MIT, commit 49ff9ec),
    lines 59-449: the 1.6.0 sites, checked word by word before they are replaced. Host differences only: the clock, no
@@ -436,6 +437,7 @@ static unsigned excl_acquire(uint8_t *code, size_t n) {
 }
 void runtime_game_patches(Module *m) {
     fprintf(stderr, "[botw] %s game-code patches\n", TOTK_GAME_VERSION);
+    mod_ips_load(m);   /* a mod's IPS files for this main (mod_ips.h, as for Tears of the Kingdom), before this runtime's own patches */
     runtime_duo_main(m);   /* the companion reads main where it is mapped; it patches nothing */
     if (realtime_enabled()) patch_realtime(m);
     else fprintf(stderr, "[botw] real-time frame step off (TOTK_REALTIME=0): the game advances by its present interval\n");

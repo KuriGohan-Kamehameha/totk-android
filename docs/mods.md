@@ -12,6 +12,10 @@ used only when one file lists them: `manifest.tsv`. The one exception is a mod m
 folder with `romfs/` inside and no manifest, which is scanned: see
 [TKMM](#a-mod-managers-merged-output-tkmm) and [Android](#android) below.
 
+**BotW Native** (branch `common`, `games/games.toml`): everything here applies with the game's own tag and build id:
+mods go to `mods/botw160`, IPS files are named after BotW 1.6.0's main (`8E9978D50BDD20B4C8395A106C27FFDE.ips`), and
+the import takes a BCML merge (its `romfs`; DLC folders are not imported) or one mod. Not yet tried with real BotW mods.
+
 The launcher points `TOTK_ROMFS_MODS` at
 
 ```text

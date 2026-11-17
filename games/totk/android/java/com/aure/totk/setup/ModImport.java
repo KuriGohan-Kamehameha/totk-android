@@ -32,7 +32,7 @@ import java.util.zip.ZipInputStream;
  * output paths as given. The earlier mods are replaced only after the whole import was copied (two renames; the
  * earlier mods are restored if the process dies between them, and they are not kept once the new ones are in place). */
 final class ModImport {
-    static final String VERSION = "v143", RECORD = "import.txt";
+    static final String VERSION = GameBuild.VERSION, RECORD = "import.txt";
     static final int MAX_FILES = 200_000, MAX_DEPTH = 32, MAX_PATH = 4095;
     static final long MAX_BYTES = 64L << 30, MIN_FREE = 256L << 20;
 

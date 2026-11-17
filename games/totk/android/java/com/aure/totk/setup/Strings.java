@@ -308,13 +308,13 @@ final class Strings {
     static final String DRIVER_RESET_HINT = "Removes the custom driver file";
     static final String DRIVER_BUNDLED = "Bundled";
     static final String MODS_ROW = "Mods";
-    static final String MODS_HINT = "A TKMM merge, or a mod's folder with romfs inside";
+    static final String MODS_HINT = "A " + GameBuild.MOD_MANAGER + " merge, or a mod's folder with romfs inside";
     static final String MODS_NONE = "None";
     static final String MODS_FROM = "Import mods from";
-    static final String MODS_BODY = "Pick the folder or zip that has a romfs folder inside: TKMM's Merged folder, or one mod as it was "
-            + "downloaded. It replaces the mods imported before. To use several mods together, merge them with TKMM first.";
+    static final String MODS_BODY = "Pick the folder or zip that has a romfs folder inside: " + GameBuild.MOD_MANAGER + "'s merged folder, or one mod as it was "
+            + "downloaded. It replaces the mods imported before. To use several mods together, merge them with " + GameBuild.MOD_MANAGER + " first.";
     static final String MODS_TREE = "A folder";
-    static final String MODS_TREE_HINT = "The folder that holds romfs, for example TKMM's Merged";
+    static final String MODS_TREE_HINT = "The folder that holds romfs, for example " + GameBuild.MOD_MANAGER + "'s merged";
     static final String MODS_ZIP = "A zip file";
     static final String MODS_ZIP_HINT = "A zip with a romfs folder inside";
     static final String MODS_REMOVE = "Remove the imported mods";
@@ -339,7 +339,7 @@ final class Strings {
     static String modsError(String code, String detail) {
         switch (code) {
             case "no_romfs": return "No romfs folder was found in it: pick the folder, or a zip of the folder, that holds romfs.";
-            case "several": return "It holds more than one mod (several romfs folders). Merge them with TKMM and import the merge.";
+            case "several": return "It holds more than one mod (several romfs folders). Merge them with " + GameBuild.MOD_MANAGER + " and import the merge.";
             case "only_modules": return "It holds only code modules, which this port does not load.";
             case "bad_zip": return "That file is not a zip archive that can be read.";
             case "bad_path": case "duplicate": return "That archive cannot be used: " + detail;

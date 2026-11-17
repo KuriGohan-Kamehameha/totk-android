@@ -192,6 +192,7 @@ final class Widgets {
                 float l = i % 4 == 0 ? 16 : 7, cos = (float) Math.cos(a), sin = (float) Math.sin(a);
                 c.drawLine(cc + cos * (r - 10), cc + sin * (r - 10), cc + cos * (r - 10 - l), cc + sin * (r - 10 - l), paint);
             }
+            if ("sheikah_eye".equals(GameBuild.EMBLEM)) { sheikahEye(c, paint, cc, r / 470f, g); return; }
             Path spiral = new Path();
             for (int t = 0; t <= 220; t++) {
                 double a = t / 220.0 * Math.PI * 5.2, rr = 8 + t * 0.255;
@@ -215,6 +216,57 @@ final class Widgets {
             paint.setStyle(Paint.Style.FILL);
             Theme.diamond(c, cc, cc + 119, 9.9f, paint);
             paint.clearShadowLayer();
+        }
+        /** BotW Native's emblem inside the ring: the Sheikah eye of app-assets/icon/make_icon_botw.py (its 1024 grid, where
+         *  the outer ring has radius 470; k converts to this canvas). Triangular lashes standing on the upper lid's own
+         *  circle, lids whose ends curl, a ringed iris with a gold pupil and a long teardrop. */
+        private static void sheikahEye(Canvas c, Paint paint, float cc, float k, float g) {
+            final float ey = -21;
+            paint.setStyle(Paint.Style.STROKE); paint.setStrokeCap(Paint.Cap.ROUND); paint.setStrokeJoin(Paint.Join.ROUND);
+            paint.setColor(Theme.ZONAI); paint.setShadowLayer(g, 0, 0, Theme.ZONAI);
+            Path p = new Path();
+            bow(p, cc, k, -215, 215, ey, ey - 125);                       // upper lid
+            paint.setStrokeWidth(26 * k); c.drawPath(p, paint);
+            p.reset(); arc(p, cc, k, -249, ey, 34, 0, -150); arc(p, cc, k, 249, ey, 34, 180, 150);   // the curls
+            paint.setStrokeWidth(22 * k); c.drawPath(p, paint);
+            p.reset(); bow(p, cc, k, -178, 178, ey + 4, ey + 112);        // lower lid
+            paint.setStrokeWidth(20 * k); c.drawPath(p, paint);
+            paint.setStrokeWidth(18 * k); c.drawCircle(cc, cc + ey * k, 84 * k, paint);    // iris
+            paint.setStrokeWidth(13 * k); c.drawCircle(cc, cc + ey * k, 48 * k, paint);
+            paint.setStyle(Paint.Style.FILL);
+            float lidR = (215f * 215f + 125f * 125f) / (2 * 125f), lidCy = ey - 125 + lidR;
+            float[][] lashes = {{-30, 84}, {0, 100}, {30, 84}};
+            for (float[] l : lashes) {                                    // lashes, pointing out from the lid's circle
+                float base = lidR + 47;
+                Path t = new Path();
+                t.moveTo(cc + px(base + l[1], l[0]) * k, cc + (lidCy + py(base + l[1], l[0])) * k);
+                t.lineTo(cc + px(base, l[0] - 8.5f) * k, cc + (lidCy + py(base, l[0] - 8.5f)) * k);
+                t.lineTo(cc + px(base, l[0] + 8.5f) * k, cc + (lidCy + py(base, l[0] + 8.5f)) * k);
+                t.close();
+                c.drawPath(t, paint);
+            }
+            Path drop = new Path();                                       // the teardrop: a stem widening to a round end
+            drop.moveTo(cc - 11 * k, cc + (ey + 112) * k); drop.lineTo(cc + 11 * k, cc + (ey + 112) * k);
+            drop.lineTo(cc + 26 * k, cc + (ey + 300) * k); drop.lineTo(cc - 26 * k, cc + (ey + 300) * k); drop.close();
+            c.drawPath(drop, paint);
+            c.drawCircle(cc, cc + (ey + 300) * k, 27 * k, paint);
+            paint.setColor(Theme.GOLD); paint.setShadowLayer(g, 0, 0, Theme.GOLD);
+            c.drawCircle(cc, cc + ey * k, 20 * k, paint);                 // pupil
+            paint.clearShadowLayer();
+        }
+        /** x and y of a point at distance d, degrees clockwise from straight up (the icon script's polar()). */
+        private static float px(float d, float deg) { return (float) (d * Math.sin(Math.toRadians(deg))); }
+        private static float py(float d, float deg) { return (float) (-d * Math.cos(Math.toRadians(deg))); }
+        /** A circular arc in grid units: centre (x, y), radius rr, from a0 sweeping by sweep degrees (clockwise from +x). */
+        private static void arc(Path p, float cc, float k, float x, float y, float rr, float a0, float sweep) {
+            p.arcTo(new RectF(cc + (x - rr) * k, cc + (y - rr) * k, cc + (x + rr) * k, cc + (y + rr) * k), a0, sweep, true);
+        }
+        /** The circular arc from (x0, yEnd) to (x1, yEnd) through (0, yMid). */
+        private static void bow(Path p, float cc, float k, float x0, float x1, float yEnd, float yMid) {
+            float h = Math.abs(x1 - x0) / 2, s = yEnd - yMid, rr = (h * h + s * s) / (2 * Math.abs(s));
+            float cy = s > 0 ? yMid + rr : yMid - rr, span = (float) Math.toDegrees(Math.asin(h / rr));
+            if (s > 0) arc(p, cc, k, 0, cy, rr, 270 - span, 2 * span);
+            else arc(p, cc, k, 0, cy, rr, 90 + span, -2 * span);
         }
     }
 

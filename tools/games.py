@@ -123,6 +123,8 @@ public final class GameBuild {{
     public static final boolean ONDEVICE_SETUP = {str(v['ondevice_setup']).lower()};
     /** Theme.SEL (selection) and Theme.ZONAI (accent), and the hue Theme.tint gives the surfaces (-1: unchanged). */
     public static final int SEL = {java_hex(a['sel'])}, ACCENT = {java_hex(a['accent'])}, SURFACE_HUE = {a['surface_hue']};
+    /** The emblem the menu draws: "island" or "sheikah_eye" (Widgets.Emblem). */
+    public static final String EMBLEM = {s(v['menu_emblem'])};
     /** The PC mod manager whose merge the Mods import takes. */
     public static final String MOD_MANAGER = {s(v['mod_manager'])};
     /** Second screen: "map" (CompanionView) or "duo" (DuoSurfaceView, libduo_host.so). */

@@ -108,6 +108,11 @@ meaning = "Adaptive launcher icon background colour, RGB (build_apk.launcher_ove
 totk = [11, 20, 22]
 botw = [7, 13, 24]
 
+[var.menu_emblem]
+meaning = "The emblem the menu draws (Widgets.Emblem; the launcher art is launcher_art): 'island' = the sky island above twin peaks, 'sheikah_eye' = the Sheikah eye (app-assets/icon/make_icon_botw.py drawn in Java)"
+totk = "island"
+botw = "sheikah_eye"
+
 [var.mod_manager]
 meaning = "The PC mod manager the Mods import texts name (its merge is what the import takes)"
 totk = "TKMM"

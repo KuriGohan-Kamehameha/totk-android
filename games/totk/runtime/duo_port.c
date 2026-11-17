@@ -47,9 +47,13 @@ int64_t runtime_aoc_read_rel(const char *rel, uint64_t offset, void *out, uint64
 #ifdef GAME_BOTW
 #define DUO_TITLE_ID 0x01007EF00011E000ull
 #define DUO_ITEM_ACTIONS 0   /* Breath of the Wild's module needs none, and this runtime has none for that game */
+/* 1.6.0's main (games.toml main_build_id), the value this file handed the host before it read main's note: used only
+   when that read fails, so a main without a single note still gets the companion it always had. */
+#define DUO_KNOWN_BUILD_ID "\x8E\x99\x78\xD5\x0B\xDD\x20\xB4\xC8\x39\x5A\x10\x6C\x27\xFF\xDE"
 #else
 #define DUO_TITLE_ID 0x0100F2C0115B6000ull
 #define DUO_ITEM_ACTIONS 1   /* Tears of the Kingdom: companion_actions.c, in the app builds */
+#define DUO_KNOWN_BUILD_ID NULL   /* the 1.4.3 files are pinned by sha256, and their main has one note (desktop test) */
 #endif
 /* companion_jni.c (the app builds; weak: a headless build has no companion, and the host is then given no actions). */
 unsigned runtime_companion_item_actions(int key, int slot, CompanionAction out[3]) __attribute__((weak));
@@ -183,8 +187,12 @@ static void start(void) {
     }
 #endif
     fprintf(stderr, "[duo] item actions: %s\n", port.request ? "the runtime's (companion_actions.c, game frame end)" : "none in this build");
+    static const char *const known_build = DUO_KNOWN_BUILD_ID;
     if (main_build_read) memcpy(port.build_id, main_build, sizeof port.build_id);
-    else fprintf(stderr, "[duo] main has no single build-id note; the package will not match it\n");
+    else if (known_build) {
+        memcpy(port.build_id, known_build, 16);
+        fprintf(stderr, "[duo] main has no single build-id note; using the supported build's id\n");
+    } else fprintf(stderr, "[duo] main has no single build-id note; the package will not match it\n");
     const char *dir = getenv("TOTK_DUO_DIR");
 #ifdef TOTK_ANDROID_APP
     const char *files = runtime_android_private_files();

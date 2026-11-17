@@ -186,9 +186,13 @@ class CompanionStateTests(unittest.TestCase):
         port = (TOTK / 'runtime/duo_port.c').read_text()
         self.assertEqual([i for i in re.findall(r'#include "([^"]+)"', port) if 'duo/' in i], ['../duo/duo_port.h'])
         self.assertIn('dlopen', port)
-        # Tears of the Kingdom: the host's sample first, its own reader until there is one (or without the host).
+        # Tears of the Kingdom: the host's fresh sample first, its own reader until there is one, without the host, or
+        # once the host's sample is older than the app takes (the host stopped). Run: test_companion_gate (jni_probe.c).
         jni = (TOTK / 'runtime/companion_jni.c').read_text()
-        self.assertIn('if (!runtime_duo_state(&s, &age)) {\n#ifdef GAME_BOTW\n        return JNI_FALSE;', jni)
+        self.assertIn('int hosted = runtime_duo_state(&s, &age);\n#ifdef GAME_BOTW\n    if (!hosted) return JNI_FALSE;', jni)
+        self.assertIn('if (!hosted || age > DUO_STATE_MAX_AGE_MS) {', jni)
+        java_age = re.search(r'MAX_AGE_MS = (\d+);', JAVA.read_text()).group(1)
+        self.assertEqual(re.search(r'#define DUO_STATE_MAX_AGE_MS (\d+)', link).group(1), java_age)
         self.assertIn('companion_state((uintptr_t)runtime_module_base("main"), guest_read, &s);', jni)
         # The 1.4.3 game code starts the host only where duo_port.c can be linked (ELF), and never needs it.
         v143 = (TOTK / 'runtime/game_patches_v143.c').read_text()
@@ -212,7 +216,9 @@ class CompanionStateTests(unittest.TestCase):
     def test_item_actions_reach_the_page_only_through_the_runtime(self):
         # DuoPort ABI 3: the runtime's own item actions (companion_actions.c) are the only route. The MIT side fills
         # five plain C functions for Tears of the Kingdom only; the GPL port forwards the module's port-only table to
-        # them; the module itself never writes guest memory or calls game code.
+        # them; the module itself never writes guest memory or calls game code. The route itself is run by
+        # test_companion_gate.CompanionGate.test_duo_route (Linux: duo_port.c and companion_jni.c through the table)
+        # and by the desktop host test's actions scenes (duo/test/totk_host_test.cpp: the module's side).
         port_h = (TOTK / 'duo/duo_port.h').read_text()
         self.assertIn('#define DUO_PORT_ABI 3u', port_h)
         fields = re.findall(r'\(\*(\w+)\)\(', port_h.split('typedef struct DuoPort {', 1)[1].split('} DuoPort;', 1)[0])

@@ -63,6 +63,8 @@ int runtime_android_game_paused(void);
 AndroidGameSuspension runtime_android_game_suspension(void);
 void runtime_android_game_pause_wait(void);
 void runtime_audio_output_pause(int paused); /* atomic notification only; AAudio work belongs to its worker */
+#elif defined(ANDROID_PAUSE_EXTERN)   /* host fixtures that decide the pause themselves (tests/companion/duo_route_probe.c) */
+int runtime_android_game_paused(void);
 #else
 static inline int runtime_android_game_paused(void) { return 0; }
 static inline AndroidGameSuspension runtime_android_game_suspension(void) { return (AndroidGameSuspension){0}; }

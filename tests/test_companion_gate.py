@@ -345,6 +345,40 @@ class CompanionGate(unittest.TestCase):
                     self.assertIn('pass: native companion cover ' + cover_setting, result.stdout)
                     self.assertIn('[TotkCompanion] cover requested=false effective=false reason=native_probe\n', result.stderr)
 
+    def test_duo_route(self):
+        """The runtime half of the Eden Duo route, compiled as the app links it: duo_port.c and companion_jni.c with a
+        stand-in companion host opened through TOTK_DUO_LIB (fake_duo_host.c). Each DuoPort pointer must reach its own
+        runtime function with its arguments; TOTK_COMPANION=0, the paused game, invalid requests and result()'s cap are
+        honoured; the build id is main's note (Breath of the Wild without one: its known 1.6.0 id); the common state
+        crosses over. For Tears of the Kingdom (item actions) and Breath of the Wild (none)."""
+        host = self.directory / 'libfake_duo_host.so'
+        self.command([self.compiler, '-std=gnu11', '-Wall', '-Wextra', '-Werror', '-fPIC', '-shared',
+                      str(FIXTURES / 'fake_duo_host.c'), '-o', str(host)])
+        for game, defines in (('totk', []), ('botw', ['-DGAME_BOTW=1', '-DGAME_BOTW160=1'])):
+            executable = self.directory / f'duo-route-{game}'
+            self.command([
+                self.compiler, '-std=gnu11', '-D_GNU_SOURCE', '-DANDROID_PAUSE_EXTERN', *defines,
+                '-Wall', '-Wextra', '-Werror', '-pthread', '-I' + str(self.include), '-I' + str(self.include / 'linux'),
+                str(TOTK / 'runtime/duo_port.c'), str(TOTK / 'runtime/companion_jni.c'), str(FIXTURES / 'duo_route_probe.c'),
+                '-ldl', '-o', str(executable),
+            ])
+            for note in ('note', 'nonote'):
+                with self.subTest(game=game, note=note):
+                    work = self.directory / f'duo-{game}-{note}'
+                    work.mkdir(exist_ok=True)
+                    result = self.command([str(executable), str(host), str(work), note], env=self.environment())
+                    self.assertIn('pass: build id', result.stdout)
+                    self.assertIn('pass: common state handed over', result.stdout)
+                    if game == 'totk':
+                        self.assertIn('pass: item actions reach the runtime through the port', result.stdout)
+                        self.assertIn("[duo] item actions: the runtime's", result.stderr)
+                    else:
+                        self.assertIn('pass: no item actions for this game', result.stdout)
+                        self.assertIn('[duo] item actions: none in this build', result.stderr)
+                    if note == 'nonote':
+                        self.assertIn('using the supported build' if game == 'botw' else 'the package will not match it',
+                                      result.stderr)
+
     def test_jni_load_without_companion_classes(self):
         result = self.command([
             self.java, '-Djava.library.path=' + str(self.directory), '-cp', str(self.native_only),

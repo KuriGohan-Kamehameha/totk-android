@@ -3,6 +3,7 @@
 #include "../../runtime/autoload.h"
 #include "../../runtime/runtime.h"
 #include "../../runtime/host_os.h"
+#include "../../runtime/duo_link.h"
 #include <jni.h>
 #include <stdatomic.h>
 #include <stdlib.h>
@@ -85,9 +86,19 @@ size_t companion_result(int seq, CompanionBuf *out) {
     out->data = strdup("{\"seq\":1,\"state\":\"done\",\"reason\":\"\",\"status\":\"ready\"}");
     return out->data ? (out->len = strlen(out->data)) : 0;
 }
-/* duo_port.c (always linked into the app's libtotk.so; weak in duo_link.h): no host sample yet, so nativeState falls
-   back to companion_state() above. Without this definition the weak reference is NULL and nativeState crashes. */
-int runtime_duo_state(struct CompanionState *out, int64_t *age_ms) { (void)out; (void)age_ms; return 0; }
+/* duo_port.c (always linked into the app's libtotk.so; weak in duo_link.h): no host sample by default, so nativeState
+   falls back to companion_state() above. Without this definition the weak reference is NULL and nativeState crashes.
+   The native test hands it a host sample of a given age (host_age >= 0): fresh, it is what nativeState returns; older
+   than DUO_STATE_MAX_AGE_MS (the host stopped ticking), nativeState reads the state itself again. */
+static _Atomic long long host_age = -1;
+int runtime_duo_state(struct CompanionState *out, int64_t *age_ms) {
+    long long age = atomic_load(&host_age);
+    if (age < 0) return 0;
+    companion_state_clear(out);
+    out->status = COMPANION_STATE_READY; out->in_game = 1; out->menu_open = 0; out->life = 7; out->max_life = 20;
+    *age_ms = age;
+    return 1;
+}
 /* The Eden Duo route's reads (runtime_companion_item_*): a game that is not in play. */
 int companion_view(uintptr_t main_base, companion_read_fn rd, int key, int slot, CompanionView *v) {
     (void)main_base; (void)rd; (void)key; (void)slot;
@@ -259,6 +270,17 @@ int main(int argc, char **argv) {
         assert(state_fn(&fixture_env, NULL, (jlongArray)&words) && words.data[6] == 2);
         page_fn(&fixture_env, NULL, -1);
         assert(state_fn(&fixture_env, NULL, (jlongArray)&words) && words.data[6] == -1);
+        /* the host's sample while it is fresh; once it is older than DUO_STATE_MAX_AGE_MS the runtime's own reader */
+        static const jlong HOSTED[COMPANION_STATE_FIELDS] = {COMPANION_STATE_READY, 1, 0, 1, 7, 20, -1, 150};
+        atomic_store(&host_age, 150);
+        assert(state_fn(&fixture_env, NULL, (jlongArray)&words) && !memcmp(words.data, HOSTED, sizeof HOSTED));
+        atomic_store(&host_age, DUO_STATE_MAX_AGE_MS);
+        assert(state_fn(&fixture_env, NULL, (jlongArray)&words) && words.data[4] == 7 && words.data[7] == DUO_STATE_MAX_AGE_MS);
+        atomic_store(&host_age, DUO_STATE_MAX_AGE_MS + 1);
+        assert(state_fn(&fixture_env, NULL, (jlongArray)&words) && !memcmp(words.data, READY, sizeof READY));
+        atomic_store(&host_age, 60000);
+        assert(state_fn(&fixture_env, NULL, (jlongArray)&words) && !memcmp(words.data, READY, sizeof READY));
+        atomic_store(&host_age, -1);
         pthread_t threads[4];
         for (unsigned i = 0; i < 4; i++) assert(!pthread_create(&threads[i], NULL, press_action, NULL));
         for (unsigned i = 0; i < 4; i++) assert(!pthread_join(threads[i], NULL));

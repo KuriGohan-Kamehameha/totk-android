@@ -20,3 +20,7 @@ void runtime_duo_frame(void) DUO_LINK_ATTR;             /* once per presented fr
    sample is. 0 before the first one: no library, the companion off, or the host not ticking yet. Any thread. */
 struct CompanionState;
 int runtime_duo_state(struct CompanionState *out, int64_t *age_ms) DUO_LINK_ATTR;
+/* The oldest sample the app takes (CompanionState.MAX_AGE_MS; tests/test_companion_state.py keeps the two equal). An
+   older one means the host stopped ticking (a tick threw, or a decode stalls): companion_jni.c then reads the state
+   itself where the runtime has a reader (Tears of the Kingdom). */
+#define DUO_STATE_MAX_AGE_MS 2000

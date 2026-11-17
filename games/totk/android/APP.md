@@ -1498,7 +1498,8 @@ companion (the rules, the gate, one request at a time and the device evidence be
 pending, done, refused or failed. The library calls no game code itself. Touch is off unless `TOTK_DUO_TOUCH=1`, as
 for Breath of the Wild, so the actions need that setting until touch is on by default. `TOTK_DUO=0` turns it off, `TOTK_DUO=module` logs the module's values
 instead. The stick LEDs and the shell take the common state from the host's samples (`duo/duo_state.h`, Tears of the
-Kingdom's table) and, until the host has one or without it, from `companion_state()` as before. The setup no longer
+Kingdom's table) and, until the host has one, without it, or once its sample is older than the app takes (2 s,
+`DUO_STATE_MAX_AGE_MS` = `CompanionState.MAX_AGE_MS`: the host stopped ticking), from `companion_state()` as before. The setup no longer
 offers, builds or updates the second-screen art (`ArtPolicy.used`); the art stage and its generator stay in the source.
 
 **Licence.** `libduo_host.so` is GPL-3.0-or-later, so every TotK Native APK built from this point on is, as a whole,

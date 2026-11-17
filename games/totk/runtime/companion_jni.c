@@ -14,9 +14,10 @@
      String result(int seq)             -> companion_result() JSON, null for an unknown seq
      boolean nativeState(long[] out)    -> the common second-screen state (companion_state.h): COMPANION_STATE_FIELDS
                                            words, false when there is none. The Eden Duo companion host's last sample
-                                           (duo_port.c) when it has one; before that, or without the host (TOTK_DUO=0,
-                                           no libduo_host.so), Tears of the Kingdom reads it now with its own reader
-                                           (companion_state()), Breath of the Wild has none. The one getter the stick
+                                           (duo_port.c) when it has a fresh one; before that, without the host
+                                           (TOTK_DUO=0, no libduo_host.so) or when its sample is older than
+                                           DUO_STATE_MAX_AGE_MS (the host stopped), Tears of the Kingdom reads it now
+                                           with its own reader (companion_state()), Breath of the Wild has none. The one getter the stick
                                            LEDs and the shell both use.
      void nativePage(int page)          -> the page the Java screen shows, for that state's page field
    The same item actions also serve the Eden Duo companion page: runtime_companion_item_* below, which duo_port.c hands
@@ -221,14 +222,15 @@ static void JNICALL native_page(JNIEnv *env, jclass cls, jint page) {
 static jboolean JNICALL native_state(JNIEnv *env, jclass cls, jlongArray out) {
     if (!out || (*env)->GetArrayLength(env, out) < COMPANION_STATE_FIELDS || !native_enabled(env, cls)) return JNI_FALSE;
     CompanionState s; int64_t age = 0, words[COMPANION_STATE_FIELDS];
-    if (!runtime_duo_state(&s, &age)) {
+    int hosted = runtime_duo_state(&s, &age);
 #ifdef GAME_BOTW
-        return JNI_FALSE;   /* Breath of the Wild's state is the host's alone (the runtime has no reader for that game) */
+    if (!hosted) return JNI_FALSE;   /* Breath of the Wild's state is the host's alone (the runtime has no reader for that game) */
 #else
-        companion_state((uintptr_t)runtime_module_base("main"), guest_read, &s);   /* MIT reader, read now */
+    if (!hosted || age > DUO_STATE_MAX_AGE_MS) {   /* none yet, or the host stopped: the MIT reader, read now */
+        companion_state((uintptr_t)runtime_module_base("main"), guest_read, &s);
         age = 0;
-#endif
     }
+#endif
     if (s.page < 0) s.page = atomic_load(&shown_page);
     companion_state_words(&s, age, words);
     jlong copy[COMPANION_STATE_FIELDS];

@@ -85,6 +85,9 @@ size_t companion_result(int seq, CompanionBuf *out) {
     out->data = strdup("{\"seq\":1,\"state\":\"done\",\"reason\":\"\",\"status\":\"ready\"}");
     return out->data ? (out->len = strlen(out->data)) : 0;
 }
+/* duo_port.c (always linked into the app's libtotk.so; weak in duo_link.h): no host sample yet, so nativeState falls
+   back to companion_state() above. Without this definition the weak reference is NULL and nativeState crashes. */
+int runtime_duo_state(struct CompanionState *out, int64_t *age_ms) { (void)out; (void)age_ms; return 0; }
 /* The Eden Duo route's reads (runtime_companion_item_*): a game that is not in play. */
 int companion_view(uintptr_t main_base, companion_read_fn rd, int key, int slot, CompanionView *v) {
     (void)main_base; (void)rd; (void)key; (void)slot;

@@ -14,7 +14,9 @@
 //   scene: ready (default), menu (pause menu open), event (cutscene), sky, depths, title, food (low hearts), loading,
 //          overlays (the pause-menu band on Inventory and Map),
 //          actions (item actions through a fake runtime: DuoPort ABI 3 functions standing in for companion_actions.c),
-//          actions-off (the same taps with no action functions, as in Eden Duo: every action shown disabled)
+//          actions-off (the same taps with no action functions, as in Eden Duo: every action shown disabled),
+//          actions-errors (the fake runtime answers busy, refused now, unsupported, then a request that ends refused
+//          "itemMoved" and one that ends failed "timeout": the page's result line and reason for each)
 // Besides the pages, the common state the host hands to the port (duo_state.h, Tears of the Kingdom's table) is
 // checked against the fixture: status, in game, menu and hearts.
 #include <atomic>
@@ -85,11 +87,16 @@ int64_t NoAoc(const char*, uint64_t, void*, uint64_t) { return -1; }
 // ---------- a fake runtime's item actions (DuoPort ABI 3; the app's are runtime/companion_actions.c) ----------
 // Rules: gear equips (unequips the equipped one), food eats, materials eat / take out (fuse disabled: not aiming).
 // A request is pending for its first PendingPolls result calls, then done; one at a time, as the runtime's.
+// g_answer (actions-errors): what the next request gets instead: a refusal from request() (-1 busy, -2 refused now,
+// -3 unsupported), or a seq whose result ends in another state ("refused itemMoved", "failed timeout").
 struct FakeRequest { std::string action, category, actor; int slot, partition; long long gen; };
+struct FakeAnswer { int code = 0; std::string state = "done", reason; };
 std::mutex g_fake_mutex;
 std::vector<FakeRequest> g_requests;
+FakeAnswer g_answer, g_running;
 int g_seq = 0, g_polls = 0;
 bool g_pending = false;
+void Answer(FakeAnswer a) { std::scoped_lock lock{g_fake_mutex}; g_answer = std::move(a); }
 constexpr int PendingPolls = 40;
 constexpr long long FakeGen = 7;
 unsigned FakeItemActions(int key, int slot, DuoPortAction out[3]) {
@@ -115,6 +122,8 @@ int FakeRequestOne(const char* action, const char* category, int slot, const cha
     std::scoped_lock lock{g_fake_mutex};
     if (g_pending) return -1;
     g_requests.push_back({action, category, actor, slot, partition, gen});
+    if (g_answer.code < 0) return g_answer.code;   // refused before anything is queued
+    g_running = g_answer;
     g_pending = true;
     g_polls = 0;
     return ++g_seq;
@@ -124,7 +133,8 @@ size_t FakeResult(int seq, char* out, size_t cap) {
     if (seq != g_seq || seq <= 0) return 0;
     const bool done = !g_pending || ++g_polls > PendingPolls;
     if (done) g_pending = false;
-    const int n = std::snprintf(out, cap, "{\"seq\":%d,\"state\":\"%s\",\"reason\":\"\"}", seq, done ? "done" : "pending");
+    const int n = std::snprintf(out, cap, "{\"seq\":%d,\"state\":\"%s\",\"reason\":\"%s\"}", seq,
+                                done ? g_running.state.c_str() : "pending", done ? g_running.reason.c_str() : "");
     return n > 0 && static_cast<size_t>(n) < cap ? static_cast<size_t>(n) : 0;
 }
 size_t Requests() { std::scoped_lock lock{g_fake_mutex}; return g_requests.size(); }
@@ -421,7 +431,8 @@ int main(int argc, char** argv) {
         g_state = *state;
         ++g_states;
     };
-    const bool actions = sc.name == "actions", actions_off = sc.name == "actions-off";
+    const bool errors = sc.name == "actions-errors";
+    const bool actions = sc.name == "actions" || errors, actions_off = sc.name == "actions-off";
     if (actions) {   // ABI 3: the runtime's item actions (here the fake above); actions-off leaves them NULL
         port.item_actions = FakeItemActions;
         port.action_state = FakeActionState;
@@ -463,7 +474,31 @@ int main(int argc, char** argv) {
         Tap(493, 1008, latest, w, h); Run(90, latest, w, h);
         Tap(314, 200, latest, w, h); Run(40, latest, w, h);
         ok &= Expect("totk.inv.sel.has", "1") && Expect("totk.inv.act.count", "1") && Expect("totk.inv.act.0.label", "Equip");
-        if (actions) {
+        if (errors) {
+            // Each answer of the runtime as the page shows it: the refusals from request() at once, the others when
+            // their result ends. A refused or failed request does not block the next tap.
+            struct Case { FakeAnswer answer; const char *state, *reason, *line; size_t requests; };
+            const Case cases[] = {
+                {{-1, "", ""}, "3", "busy", "Not done: Another action is still running", 1},
+                {{-2, "", ""}, "3", "notNow", "Not done: Not possible right now", 2},
+                {{-3, "", ""}, "3", "unsupported", "Not done: Not supported on this game build", 3},
+                {{0, "refused", "itemMoved"}, "3", "itemMoved", "Not done: The item moved; try again", 4},
+                {{0, "failed", "timeout"}, "4", "timeout", "Failed: No response from the game", 5},
+            };
+            for (const Case& c : cases) {
+                Answer(c.answer);
+                Tap(1112, 1000, latest, w, h);
+                Run(c.answer.code < 0 ? 10 : 80, latest, w, h);
+                const bool case_ok = Expect("totk.act.state", c.state) && Expect("totk.act.reason", c.reason) &&
+                                     Expect("totk.act.line", c.line) && Requests() == c.requests &&
+                                     Expect(c.answer.code < 0 || c.answer.state == "refused" ? "totk.act.refused" : "totk.act.failed", "1");
+                std::fprintf(stderr, "test: answer %d %s %s: \"%s\"%s\n", c.answer.code, c.answer.state.c_str(),
+                             c.answer.reason.c_str(), Duo::TestValue("totk.act.line").c_str(), case_ok ? "" : " (FAIL)");
+                ok &= case_ok;
+            }
+            ok &= ExpectRequest(4, "equip", "weapons", 1, "Weapon_Sword_002");
+            ok &= Save(out + "-inventory-failed.png", latest, w, h);
+        } else if (actions) {
             ok &= Expect("totk.inv.act.0.enabled", "1") && Expect("totk.inv.act.0.disabled", "0");
             Tap(1112, 1000, latest, w, h);   // the action button: request accepted, pending
             ok &= Expect("totk.act.pending", "1");

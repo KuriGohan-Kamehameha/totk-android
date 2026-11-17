@@ -33,7 +33,7 @@ cmake --build /tmp/duo-totk -j4
   `Font/Font.Nin_NX_NVN.bfarc.zs`, `UI/LayoutArchive/Common.Product.140.Nin_NX_NVN.blarc.zs`,
   `Mals/USen.Product.142.sarc.zs`, the map tiles `map_tiles.txt` names and the actor packs of the fixture's items.
 - `scene`: `ready` (default; also taps Inventory, an item and Map), `menu`, `event`, `title`, `sky`, `depths`, `food`,
-  `overlays`, `loading`, `actions`, `actions-off`; a sixth argument makes the build id another game version's.
+  `overlays`, `loading`, `actions`, `actions-off`, `actions-errors`; a sixth argument makes the build id another game version's.
   - `actions`: item actions through a fake runtime (the DuoPort ABI 3 functions, standing in for
     `runtime/companion_actions.c`): the Inventory's Equip on the second weapon, a second tap while it is pending (dropped),
     a material's three actions with the runtime's reason on the disabled one, and the quick picker on the weapon corner
@@ -41,6 +41,11 @@ cmake --build /tmp/duo-totk -j4
     tapped item, and the module's result line must say done.
   - `actions-off`: the same taps without those functions, as in Eden Duo: every action is shown disabled ("Item actions
     need the TotK Native app"), a tap is refused and nothing is requested.
+  - `actions-errors`: the fake runtime's other answers, one per tap on Equip: busy, refused now and unsupported from
+    the request itself, then a request whose result ends refused (`itemMoved`) and one that ends failed (`timeout`).
+    Each must show as the page's state, reason and result line ("Not done: ...", "Failed: ..."), and none may block
+    the next tap. The runtime's own side of these answers (duo_port.c, companion_jni.c) is run by
+    `tests/test_companion_gate.py` (`test_duo_route`, Linux).
 
 Exit 0: every page was written and, except for `loading` and another build, the common state the host handed over
 (`duo_state.h`, Tears of the Kingdom's table) is the fixture's: status, in game, menu, hearts 47/80. The PNGs contain

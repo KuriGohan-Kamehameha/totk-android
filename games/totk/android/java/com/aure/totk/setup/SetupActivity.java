@@ -1502,6 +1502,8 @@ public final class SetupActivity extends Activity implements SetupService.Listen
 
     // ---------- game data ----------
     private File gameFile(String name) { return new File(InstallState.gameDir(this), name); }
+    /** The mods the game will use (ModImport.active: totk.env, the game folder, the import, the shared folder). */
+    private ModImport.Active activeMods() { return ModImport.active(InstallState.gameDir(this), getFilesDir(), getExternalFilesDir(null)); }
     /** Bytes of the imported data, or DataSize.MEASURING / UNKNOWN. Walked on DataSize's own thread whenever the install
      * changed since the last walk (another folder, a finished stage or rebuild, a move or delete); Home and Game data are
      * drawn again when the walk ends, and once more when its time is up, so "measuring…" never stays. */
@@ -1557,12 +1559,14 @@ public final class SetupActivity extends Activity implements SetupService.Listen
         reset.dimmed(missing || !driver.isFile());
         gameControl(driverRow, "Changing the driver", this::pickDriver);
         gameControl(reset, "Changing the driver", this::resetDriver);
-        // Mods live in the app's private files (ModImport), so they do not depend on where the game data is.
+        // Imported mods live in the app's private files (ModImport), so they do not depend on where the game data is. The
+        // row shows what the game will use, found as the runtime finds it (totk.env, the game folder, the import, the
+        // shared folder).
         if (!modsBusy) ModImport.recover(getFilesDir());   // an import that died between its two renames
-        ModImport.Summary mods = ModImport.read(getFilesDir());
+        ModImport.Active mods = activeMods();
         Widgets.Row modsRow = dataRow(list, "mods", Strings.MODS_ROW, Strings.MODS_HINT,
-                modsBusy ? Strings.MODS_IMPORTING : mods == null ? Strings.MODS_NONE : Strings.modsState(mods.files, mods.bytes, mods.modules.size()),
-                mods == null ? Theme.TEXT3 : Theme.ZONAI, v -> chooseMods());
+                modsBusy ? Strings.MODS_IMPORTING : Strings.modsRow(mods),
+                !mods.problem.isEmpty() ? Theme.WARN : mods.any() ? Theme.ZONAI : Theme.TEXT3, v -> chooseMods());
         modsRow.dimmed(modsBusy);
         gameControl(modsRow, "Changing the mods", this::chooseMods);
         // The player's own Lossless.dll for the LSFG frame-generation engine: app-private, so it does not depend on the game folder.
@@ -1622,9 +1626,14 @@ public final class SetupActivity extends Activity implements SetupService.Listen
             case "driver": case "driver-reset": detailText.setText(Strings.DRIVER_TEXT); break;
             case "mods": {
                 detailText.setText(Strings.MODS_TEXT);
-                ModImport.Summary mods = ModImport.read(getFilesDir());
-                if (gameFile("mods/" + ModImport.VERSION).isDirectory()) fact(Strings.MODS_BY_HAND, Strings.MODS_BY_HAND_NOTE);
+                ModImport.Active active = activeMods();
+                if (active.off) fact(Strings.MODS_USED, Strings.MODS_OFF);
+                else if (active.folder != null) fact(Strings.MODS_USED, Strings.modsUsed(active.from, active.folder));
+                if (!active.problem.isEmpty()) fact(Strings.STATUS_FACT, Strings.modsProblem(active.problem));
+                if (active.importUnused) fact(Strings.MODS_IMPORTED, Strings.modsUnused(active.from));
+                ModImport.Summary mods = active.summary;
                 if (mods == null) break;
+                if (!active.layout.isEmpty()) fact(Strings.MODS_LAYOUT, Strings.modsLayout(active.layout));
                 fact(Strings.MODS_FILES, mods.files + " · " + Strings.bytes(mods.bytes));
                 if (mods.patches > 0) fact(Strings.MODS_PATCHES, mods.patches + " · " + Strings.MODS_PATCHES_NOTE);
                 if (!mods.modules.isEmpty()) fact(Strings.MODS_MODULES, mods.modules.size() + " · " + Strings.MODS_MODULES_NOTE);
@@ -2542,7 +2551,8 @@ public final class SetupActivity extends Activity implements SetupService.Listen
         Widgets.Row versionRow = listRow(list, "about:version", Strings.VERSION_ROW, version, 92, 18);
         Widgets.Row licencesRow = listRow(list, "about:licences", Strings.LICENCES_ROW, Strings.LICENCES_HINT, 92, 18);
         licencesRow.setOnClickListener(v -> go(Screen.LICENSES));
-        Widgets.Row project = listRow(list, "about:project", Strings.PROJECT_ROW, Strings.PROJECT_URL, 92, 18);
+        String projectUrl = Strings.projectUrl(getPackageName());
+        Widgets.Row project = listRow(list, "about:project", Strings.PROJECT_ROW, projectUrl, 92, 18);
         Widgets.Row updateRow = updateSwitch(list);
         detailPanel();
         detailNote.setVisibility(View.GONE);
@@ -2563,7 +2573,7 @@ public final class SetupActivity extends Activity implements SetupService.Listen
             } else if (v == updateRow) {
                 detailTitle.setText(Strings.UPDATES); detailText.setText(Strings.UPDATE_PRIVACY);
             } else {
-                detailTitle.setText(Strings.PROJECT_ROW); detailText.setText(Strings.PROJECT_TEXT);
+                detailTitle.setText(Strings.PROJECT_ROW); detailText.setText(Strings.projectText(projectUrl));
                 fact(Strings.UPSTREAM_ROW, Strings.UPSTREAM_BY);
                 fact(Strings.ANDROID_PORT_ROW, Strings.ANDROID_PORT_BY);
             }

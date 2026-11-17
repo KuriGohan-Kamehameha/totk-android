@@ -18,6 +18,7 @@ Generated from `games/games.toml` (`python3 tools/games.py table`; the test chec
 | `title` | The game's name in the menu and About | `Tears of the Kingdom` | `Breath of the Wild` |
 | `version_label` | The game version the app runs, as shown (Home chip, About, setup details) | `1.4.3` | `1.6.0` |
 | `title_id` | The game's title id (saves export/import in SaveManager; the runtime's own copies are under [branches]: fs_host.c, services.c, duo_port.c) | `0100F2C0115B6000` | `01007EF00011E000` |
+| `save_slots` | The game's save layout under the save root (SaveManager: the slot list, import detection, export and backups): dir = a slot folder's name (regex, group 1 = the slot number), file = the file that makes the folder a slot, picture = the slot's picture (a JPEG, or a file with one inside), names = how the menu's texts name the slot folders. option.sav at the save root is common | `{"dir": "slot_(\\d\\d)", "file": "progress.sav", "picture": "caption.sav", "names": "slot_00 … slot_05"}` | `{"dir": "(\\d)", "file": "game_data.sav", "picture": "caption.jpg", "names": "0 … 5"}` |
 | `main_build_id` | Build id of the supported main (mods: exefs/<build id>.ips is applied only when it names this main; the runtime reads it from main itself, this is for docs and mod authors). TotK's 1.4.3 files are pinned by sha256 instead | `pinned by games/totk/assets/expected-v1.4.3.json` | `8E9978D50BDD20B4C8395A106C27FFDE` |
 | `romfs_size` | Size of the merged RomFS image extracted/<tag>/romfs/romfs.bin (InstallState's install check) | `17052625232` | `15131979952` |
 | `ondevice_setup` | Whether the app's own setup can import this game from a dump (false: the game folder is filled by hand, BOTW.md) | `true` | `false` |
@@ -40,12 +41,12 @@ Generated from `games/games.toml` (`python3 tools/games.py table`; the test chec
 
 Flavours (`build_release.py --game <game> --flavour <flavour>`):
 
-| Game | Flavour | Package | Launcher label | Version | Code | Key |
-|---|---|---|---|---|---|---|
-| `totk` | `fork` | `io.github.kurigohankamehameha.totk` | TotK Native (fork) | `1.0.1-fork.2` | 10002 | `fork-release.p12` |
-| `totk` | `dev` | `io.github.kurigohankamehameha.totk.dev` | TotK Native (dev) | `1.0.1-dev` | clock | `totk-dev.pem` |
-| `botw` | `release` | `io.github.p1r4n351.botw` | BotW Native | `0.2.0-pre.1` | 200 | `botw-release.pem` |
-| `botw` | `dev` | `io.github.p1r4n351.botw` | BotW Native | `0.2.0-dev` | clock | `botw-dev.pem` |
+| Game | Flavour | Package | Launcher label | Version | Code | Key | Repository | Release tag, asset |
+|---|---|---|---|---|---|---|---|---|
+| `totk` | `fork` | `io.github.kurigohankamehameha.totk` | TotK Native (fork) | `1.0.1-fork.2` | 10002 | `fork-release.p12` | KuriGohan-Kamehameha/totk-android | `v<version>`, `TotK-Native-<version>.apk` |
+| `totk` | `dev` | `io.github.kurigohankamehameha.totk.dev` | TotK Native (dev) | `1.0.1-dev` | clock | `totk-dev.pem` | KuriGohan-Kamehameha/totk-android | `v<version>`, `TotK-Native-<version>.apk` |
+| `botw` | `release` | `io.github.p1r4n351.botw` | BotW Native | `0.2.0-pre.1` | 200 | `botw-release.pem` | P1R4N351/botw-android | `botw-v<version>`, `BotW-Native-<version>.apk` |
+| `botw` | `dev` | `io.github.p1r4n351.botw` | BotW Native | `0.2.0-dev` | clock | `botw-dev.pem` | P1R4N351/botw-android | `botw-v<version>`, `BotW-Native-<version>.apk` |
 
 Code that branches on the game itself is listed under `[branches]` in `games/games.toml`: today the C runtime and
 graphics layer (`#if GAME_BOTW` / `TOTK_GAME_V143`: the games' addresses, services and behaviour), the Makefile, a few
@@ -88,7 +89,10 @@ python3 games/totk/android/build_release.py --game <game> --flavour <flavour> --
 The keys stay in `/root/totk-work/keys` (`TOTK_KEYS_DIR`) on the build machine and never enter git; a release flavour
 refuses to build without its key, and a signing key is never changed (users would have to reinstall and lose data).
 To release, raise `version_name` / `version_code` of the flavour in `games/games.toml` (codes only grow), commit, build,
-publish the APK and its sha256. Every APK is audited (`apk/audit_apk.py`): a game with `gpl_companion = false` (TotK)
+publish the APK and its sha256 in the flavour's `repository` as tag `<release_tag><version>` with asset
+`<release_asset><version>.apk` (+ `.sha256`): About > Project links there, and "Check for updates" asks that repository's
+latest release only (one HEAD, `UpdateRules`), for its own package, and only from an `x.y.z` version (a pre-release or dev
+build never asks). Every APK is audited (`apk/audit_apk.py`): a game with `gpl_companion = false` (TotK)
 must not carry `libduo_host.so`, the Eden Duo package or its licence texts. One build at a time on the 8 GB build
 machine (`JOBS=4`, `DUO_JOBS=2`).
 

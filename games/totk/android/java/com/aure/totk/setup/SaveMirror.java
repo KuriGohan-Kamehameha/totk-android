@@ -29,8 +29,8 @@ import java.util.Map;
 
 /** The save folder ("mirror"): the game keeps saving privately; this copies the save set to a folder the player picked
  * (Storage Access Framework tree, persisted grant) after every in-game save and from the menu, and brings a newer copy
- * from the folder back before the game starts. Layout: <picked>/TotK Native saves/sync-NNNNNN/ holding the save root's
- * files and totk-native-saves.json; each sync writes a new generation and its manifest last, then removes the older
+ * from the folder back before the game starts. Layout: <picked>/<app> saves/sync-NNNNNN/ (SaveManager.TOP: "TotK Native
+ * saves", "BotW Native saves") holding the save root's files and totk-native-saves.json; each sync writes a new generation and its manifest last, then removes the older
  * ones (SaveManager.readFolder/push), so a crash mid-upload never leaves a copy that could be taken for complete and no
  * provider rename is needed. <private>/save-sync.json records the content at the last successful sync.
  * Runs in both processes: the menu (":setup") and the game (Watcher); state/mirror.lock serialises them.

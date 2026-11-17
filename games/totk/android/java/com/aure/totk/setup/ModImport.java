@@ -234,6 +234,135 @@ final class ModImport {
         return s;
     }
 
+    // ---------- the mods the game will use ----------
+    /** Where the runtime takes its mods from (runtime/frontend_android.c, in this order): TOTK_ROMFS_MODS in the game
+     * folder's totk.env (0 or empty = none); else the first mods/<version> folder that exists in the game folder (placed
+     * by hand), the app's private files (this import) and the app's shared folder (Android/data/<package>/files). */
+    static final String FROM_ENV = "env", FROM_GAME = "game", FROM_PRIVATE = "private", FROM_SHARED = "shared";
+
+    /** What the menu shows for the mods: what the runtime will load and from where. */
+    static final class Active {
+        String from = "";          // FROM_*, "" = no mods folder
+        File folder;               // the folder the runtime loads (null: none)
+        boolean off;               // totk.env sets TOTK_ROMFS_MODS to 0 or nothing
+        String layout = "";        // "manifest" (a manifest.tsv names the files), "merge" (romfs/ is scanned), "" (nothing)
+        Summary summary;           // what is in it; null when it holds no mods
+        String problem = "";       // a folder the runtime refuses at start (see runtime/romfs.c mods_load)
+        boolean importUnused;      // mods imported here, but another folder comes first
+        boolean any() { return summary != null && (summary.files > 0 || summary.patches > 0); }
+    }
+
+    /** game: the game folder (its totk.env and mods/), privateFiles: the app's files, shared: its shared folder. */
+    static Active active(File game, File privateFiles, File shared) {
+        Active a = new Active();
+        String env = game == null ? null : envValue(new File(game, "totk.env"), "TOTK_ROMFS_MODS");
+        File imported = folder(privateFiles);
+        if (env != null) {
+            a.from = FROM_ENV;
+            if (env.isEmpty() || env.equals("0")) a.off = true;
+            else a.folder = new File(env);
+        } else {
+            File[] roots = {game, privateFiles, shared};
+            String[] names = {FROM_GAME, FROM_PRIVATE, FROM_SHARED};
+            for (int i = 0; i < roots.length && a.folder == null; i++) {
+                File root = roots[i];
+                if (root == null) continue;
+                File mods = new File(root, "mods/" + VERSION);
+                if (mods.isDirectory()) { a.folder = mods; a.from = names[i]; }
+            }
+        }
+        if (a.folder != null) {
+            if (a.folder.getAbsoluteFile().equals(imported.getAbsoluteFile()) && new File(imported, RECORD).isFile()) {
+                a.summary = read(privateFiles);   // the import's own record (and where it came from)
+                a.layout = "merge";
+            } else describe(a);
+        }
+        a.importUnused = new File(imported, RECORD).isFile() && (a.folder == null || !a.folder.getAbsoluteFile().equals(imported.getAbsoluteFile()));
+        return a;
+    }
+
+    /** The last assignment of name in an env file the way the runtime reads totk.env (frontend_android.c env_line:
+     * NAME=value lines, # comments, "export ", one level of quotes), or null when it is not assigned. */
+    static String envValue(File file, String name) {
+        if (!file.isFile() || file.length() > 1 << 20) return null;
+        String found = null;
+        try {
+            for (String line : new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8).split("\n")) {
+                String s = line.replaceAll("^[ \t]+", "").replaceAll("[\r\n ]+$", "");
+                if (s.isEmpty() || s.startsWith("#")) continue;
+                if (s.startsWith("export ")) s = s.substring(7);
+                int eq = s.indexOf('=');
+                if (eq <= 0 || !s.substring(0, eq).equals(name)) continue;
+                String v = s.substring(eq + 1);
+                if (v.length() >= 2 && (v.charAt(0) == '"' || v.charAt(0) == '\'') && v.charAt(v.length() - 1) == v.charAt(0)) v = v.substring(1, v.length() - 1);
+                found = v;
+            }
+        } catch (IOException unreadable) { return null; }
+        return found;
+    }
+
+    private static String cachedKey;
+    private static Active cachedScan;
+
+    /** What the runtime's mods_load finds in a.folder: its manifest.tsv; else romfs/manifest.tsv; else the files under
+     * romfs/ (desktop leftovers and links left out, as runtime/romfs_scan.h does); and beside it exefs/ (or, for a
+     * folder named romfs, ../exefs: runtime/mod_ips.h mod_exefs_dir), its IPS patches and code modules. */
+    private static void describe(Active a) {
+        File mods = a.folder, romfs = new File(mods, "romfs");
+        String key = mods.getAbsolutePath() + '|' + mods.lastModified() + '|' + new File(mods, "manifest.tsv").lastModified() + '|'
+                + romfs.lastModified() + '|' + new File(romfs, "manifest.tsv").lastModified();
+        synchronized (ModImport.class) {
+            if (key.equals(cachedKey)) { a.layout = cachedScan.layout; a.summary = cachedScan.summary; a.problem = cachedScan.problem; return; }
+        }
+        Summary s = new Summary();
+        try {
+            if (exists(new File(mods, "manifest.tsv"))) { a.layout = "manifest"; manifest(new File(mods, "manifest.tsv"), s); }
+            else if (!exists(romfs)) { a.layout = ""; s = null; }
+            else if (Files.isSymbolicLink(romfs.toPath()) || !romfs.isDirectory()) { a.problem = "romfs_not_folder"; s = null; }
+            else if (exists(new File(romfs, "manifest.tsv"))) { a.layout = "manifest"; manifest(new File(romfs, "manifest.tsv"), s); }
+            else { a.layout = "merge"; scan(romfs, s, 0); }
+        } catch (IOException unreadable) { a.problem = "unreadable"; s = null; }
+        if (s != null) exefs(mods, s);
+        a.summary = s;
+        Active copy = new Active();
+        copy.layout = a.layout; copy.summary = a.summary; copy.problem = a.problem;
+        synchronized (ModImport.class) { cachedKey = key; cachedScan = copy; }
+    }
+    private static boolean exists(File f) { return Files.exists(f.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS); }
+    /** manifest.tsv: name, size, sha256, original sha256 per line (runtime/romfs.c overlay_load); # comments. */
+    private static void manifest(File file, Summary s) throws IOException {
+        if (!file.canRead()) throw new IOException("cannot read " + file);
+        try (java.io.BufferedReader in = Files.newBufferedReader(file.toPath(), StandardCharsets.UTF_8)) {
+            for (String line; (line = in.readLine()) != null; ) {
+                if (line.isEmpty() || line.startsWith("#")) continue;
+                String[] f = line.split("\t");
+                s.files++;
+                try { if (f.length > 1) s.bytes += Long.parseLong(f[1]); } catch (NumberFormatException bad) { }
+            }
+        }
+    }
+    private static void scan(File dir, Summary s, int depth) throws IOException {
+        File[] children = dir.listFiles();
+        if (children == null) throw new IOException("cannot read " + dir);
+        for (File child : children) {
+            if (junk(child.getName()) || Files.isSymbolicLink(child.toPath())) continue;
+            if (child.isDirectory()) { if (depth < MAX_DEPTH + 8) scan(child, s, depth + 1); }
+            else if (child.isFile()) { s.files++; s.bytes += child.length(); }
+        }
+    }
+    private static void exefs(File mods, Summary s) {
+        File dir = new File(mods, "exefs");
+        if (!dir.isDirectory() && mods.getName().equals("romfs") && mods.getParentFile() != null) dir = new File(mods.getParentFile(), "exefs");
+        String[] names = dir.isDirectory() ? dir.list() : null;
+        if (names == null) return;
+        Arrays.sort(names);
+        for (String name : names) {
+            if (junk(name) || name.equals("main.npdm")) continue;
+            if (name.toLowerCase(Locale.ROOT).endsWith(".ips")) s.patches++;
+            else s.modules.add(name);
+        }
+    }
+
     /** After an import that died between its two renames only <version>.old is left: put those earlier mods back.
      * Call it with the game lock held or while no import can run (the menu does, before it reads the record). */
     static void recover(File privateFiles) {

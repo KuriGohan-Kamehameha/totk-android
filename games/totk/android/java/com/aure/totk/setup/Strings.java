@@ -10,8 +10,14 @@ final class Strings {
     static final String APP = GameBuild.APP;
     static final String SUBTITLE = "UNOFFICIAL ANDROID PORT";
     static final String LEGAL = "You must own the game. Your files stay on this device; nothing is uploaded.";
-    /** The project's public home; one constant so the release can point it elsewhere. */
-    static final String PROJECT_URL = "https://github.com/AurelioB/totk-android";
+    /** The project this app comes from (TotK Native by AurelioB): the Project link of a build that is no flavour. */
+    static final String ORIGIN_URL = "https://github.com/AurelioB/totk-android";
+    /** The app's own public home: its flavour's repository (games/games.toml [flavour], by package), where its source,
+     *  issues and releases are; ORIGIN_URL for a build that is no flavour. */
+    static String projectUrl(String pkg) {
+        com.aure.totk.UpdateRules.Release release = com.aure.totk.UpdateRules.release(pkg, GameBuild.RELEASES);
+        return release == null ? ORIGIN_URL : release.repository;
+    }
     /** The projects this one is built on: MacNativeGames by ly05010419, and kitcatkode's Android port of it. */
     static final String UPSTREAM_URL = "https://github.com/ly05010419/MacNativeGames";
     static final String ANDROID_PORT_URL = "https://github.com/kitcatkode/MacNativeGames";
@@ -26,7 +32,7 @@ final class Strings {
     static final String UPDATE_MENU_BODY = "Download and install the new version? Your saves and game data will be kept. A network connection is needed to download.";
     static final String UPDATE_ALLOW = "Allow app updates";
     static final String UPDATE_ALLOW_BODY = "Android needs permission for " + APP + " to install its own update. Enable “Allow from this source”, then return here to continue. You will still confirm the installation.";
-    static String updateAvailable(String version) { return "TotK Native " + version + " is available"; }
+    static String updateAvailable(String version) { return APP + " " + version + " is available"; }
     // Button prompts
     static final String P_SELECT = "Select", P_QUIT = "Quit", P_START = "Start game", P_DEFAULTS = "Defaults", P_CHANGE = "Change";
     static final String P_ADJUST = "Adjust", P_BACK = "Back", P_CHOOSE = "Choose", P_INSTALL = "Install", P_CANCEL = "Cancel";
@@ -323,8 +329,35 @@ final class Strings {
     static final String MODS_REMOVED = "Imported mods removed";
     static final String MODS_REMOVING = "Removing mods…";
     static final String MODS_NOT_REMOVED = "Some mod files could not be removed";
-    static final String MODS_BY_HAND = "Game folder";
-    static final String MODS_BY_HAND_NOTE = "has its own mods folder, which is used instead";
+    static final String MODS_OFF = "Off in totk.env";
+    static final String MODS_USED = "Used from";
+    static final String MODS_IMPORTED = "Imported mods";
+    static final String MODS_LAYOUT = "Listed by";
+    /** Where the mods the game uses come from (ModImport.Active.from). */
+    static String modsFrom(String from) {
+        switch (from) {
+            case ModImport.FROM_ENV: return "totk.env";
+            case ModImport.FROM_GAME: return "game folder";
+            case ModImport.FROM_PRIVATE: return "imported";
+            case ModImport.FROM_SHARED: return "shared folder";
+            default: return "";
+        }
+    }
+    static String modsUsed(String from, java.io.File folder) { return modsFrom(from) + (folder == null ? "" : " · " + folder.getPath()); }
+    static String modsUnused(String from) {
+        return from.equals(ModImport.FROM_ENV) ? "not used: totk.env sets TOTK_ROMFS_MODS" : "not used: the " + modsFrom(from) + "'s mods come first";
+    }
+    static String modsLayout(String layout) { return layout.equals("manifest") ? "manifest.tsv" : "the files under romfs"; }
+    static String modsProblem(String code) {
+        return code.equals("romfs_not_folder") ? "romfs there is not a folder: the game stops at start (totk.log)"
+                : "cannot be read: the game stops at start (totk.log)";
+    }
+    static String modsRow(ModImport.Active a) {
+        if (a.off) return MODS_OFF;
+        if (!a.problem.isEmpty()) return "Not usable · " + modsFrom(a.from);
+        if (!a.any()) return MODS_NONE;
+        return modsState(a.summary.files, a.summary.bytes, a.summary.modules.size()) + " · " + modsFrom(a.from);
+    }
     static final String MODS_FILES = "Game files";
     static final String MODS_PATCHES = "Code patches";
     static final String MODS_PATCHES_NOTE = "checked and applied at start";
@@ -381,8 +414,9 @@ final class Strings {
     static final String MODS_TEXT = "Game files that replace or add to your game data. They are copied into the app's private storage "
             + "and used from the next start. IPS patches of the game's main program are checked and applied; code modules (subsdk "
             + "files, as UltraCam and other exlaunch mods ship them) are not loaded, so a mod that needs one may misbehave. If the game "
-            + "stops at start after an import, totk.log names the file; remove the imported mods here. A mods folder placed by hand "
-            + "in the game folder is used instead of the import.";
+            + "stops at start after an import, totk.log names the file; remove the imported mods here. The game uses one mods folder, "
+            + "the first of: TOTK_ROMFS_MODS in totk.env, mods/" + GameBuild.VERSION + " in the game folder, the import, mods/"
+            + GameBuild.VERSION + " in the app's shared folder. This page shows the one it will use.";
     static final String LSFG_TEXT = "Optional. Frame generation can use the Lossless Scaling engine (LSFG 3.1) instead of the "
             + "built-in interpolation. It needs Lossless.dll from your own purchased copy of Lossless Scaling (the file is in its "
             + "Steam folder); the app does not include it. The file is copied into the app's private storage and only read. "
@@ -534,7 +568,7 @@ final class Strings {
         return new java.text.SimpleDateFormat("d MMM yyyy, HH:mm", Locale.UK).format(new java.util.Date(millis));
     }
     static final String IMPORT_FROM = "Import saves from", IMPORT_ZIP = "A zip file", IMPORT_ZIP_HINT = "An export of this app or a save tool's zip";
-    static final String IMPORT_TREE = "A folder", IMPORT_TREE_HINT = "A folder with slot_00 … slot_05 (e.g. from JKSV or Checkpoint)";
+    static final String IMPORT_TREE = "A folder", IMPORT_TREE_HINT = "A folder with " + GameBuild.SAVE_SLOT_NAMES + " (e.g. from JKSV or Checkpoint)";
     static String importFound(int slots) { return "Found " + slotCount(slots); }
     static String importLead(String source, long newest, int current) {
         return "From " + source + " · newest save " + date(newest) + ". "
@@ -571,10 +605,11 @@ final class Strings {
         switch (code == null ? "" : code) {
             case "absolute": case "traversal": return "This dump has file names that point outside its folder, so it was not imported.";
             case "symlink": return "This dump contains links, which a save set never has, so it was not imported.";
-            case "too_many": return "This has more than 500 files, so it is not a TotK save set.";
-            case "too_big": return "This is larger than 128 MB, so it is not a TotK save set.";
+            case "too_many": return "This has more than 500 files, so it is not a " + GameBuild.TITLE + " save set.";
+            case "too_big": return "This is larger than 128 MB, so it is not a " + GameBuild.TITLE + " save set.";
             case "huge_file": return "It contains a file far larger than any save file, so it was not imported.";
-            case "no_saves": return "No TotK saves found. A save set has slot_00 … slot_05 folders with progress.sav, or option.sav.";
+            case "no_saves": return "No " + GameBuild.TITLE + " saves found. A save set has " + GameBuild.SAVE_SLOT_NAMES + " folders with " + GameBuild.SAVE_SLOT_FILE
+                    + ", or option.sav.";
             case "corrupt": return "The saves are damaged or do not match their list of files" + (detail == null ? "." : ": " + detail);
             case "not_zip": return "That file is not a zip archive.";
             case "game_running": return error("game_running");
@@ -591,8 +626,10 @@ final class Strings {
     static final String LICENCES_HINT = "Turnip, Noto Sans, hactool and the other components";
     static final String LICENCES_TEXT = "The licence texts of every open-source component shipped in this app.";
     static final String PROJECT_ROW = "Project";
-    static final String PROJECT_TEXT = "Source code, issues and releases: " + PROJECT_URL + ".\nBuilt on MacNativeGames by ly05010419 "
-            + "and on kitcatkode's Android port of it.";
+    static String projectText(String url) {
+        return "Source code, issues and releases: " + url + "." + (url.equals(ORIGIN_URL) ? "" : "\nBased on TotK Native (" + ORIGIN_URL + ").")
+                + "\nBuilt on MacNativeGames by ly05010419 and on kitcatkode's Android port of it.";
+    }
     static final String UPSTREAM_ROW = "MacNativeGames", UPSTREAM_BY = "ly05010419 · " + UPSTREAM_URL;
     static final String ANDROID_PORT_ROW = "Android port", ANDROID_PORT_BY = "kitcatkode · " + ANDROID_PORT_URL;
     static final String LICENSES = "Open-source licences";

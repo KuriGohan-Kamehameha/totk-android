@@ -38,15 +38,22 @@ import java.util.zip.ZipOutputStream;
 final class SaveManager {
     private SaveManager() { }
     static final String TITLE_ID = GameBuild.TITLE_ID;
-    /** Top folder of an export zip and of the mirror folder; the manifest sits inside it next to the save files. */
-    static final String TOP = "TotK Native saves", MANIFEST = "totk-native-saves.json";
+    /** Top folder of an export zip and of the mirror folder ("TotK Native saves", "BotW Native saves"); the manifest
+     * sits inside it next to the save files (its name is the same for both games; its title_id tells them apart). */
+    static final String TOP = GameBuild.APP + " saves", MANIFEST = "totk-native-saves.json";
     static final int MAX_FILES = 500, KEEP_BACKUPS = 10;
     static final long MAX_TOTAL = 128L << 20;
-    /** Game save files are a few MB (progress.sav ~2.3 MB); a large file with another name is not part of a save set. */
+    /** Game save files are a few MB (TotK's progress.sav ~2.3 MB, BotW's game_data.sav ~1 MB); a large file with another
+     * name is not part of a save set. */
     static final long MAX_KNOWN_FILE = 32L << 20, MAX_OTHER_FILE = 1L << 20;
     /** Zip entries anywhere in the archive (outside the save root too): a cap against archives that are not save dumps. */
     static final int MAX_ENTRIES = 10_000;
-    private static final Pattern SLOT_PROGRESS = Pattern.compile("(?:.*/)?slot_\\d\\d/progress\\.sav");
+    /** The game's slot layout (games/games.toml save_slots): TotK slot_00..slot_05/progress.sav, BotW 0..5/game_data.sav;
+     * option.sav sits at the save root in both. SLOT_DIR's group 1 is the slot number. */
+    static final String SLOT_FILE = GameBuild.SAVE_SLOT_FILE, PICTURE = GameBuild.SAVE_PICTURE;
+    private static final Pattern SLOT_DIR = Pattern.compile(GameBuild.SAVE_SLOT_DIR);
+    private static final Pattern SLOT_ENTRY = Pattern.compile("(" + GameBuild.SAVE_SLOT_DIR + ")/" + Pattern.quote(SLOT_FILE));
+    private static final Pattern SLOT_PROGRESS = Pattern.compile("(?:.*/)?" + SLOT_ENTRY.pattern());
     private static final Pattern KNOWN = Pattern.compile("(?i).*\\.(sav|dat|jpg|jpeg|bin)");
 
     // ---------- errors ----------
@@ -321,29 +328,30 @@ final class SaveManager {
 
     // ---------- slots ----------
     static final class Slot {
-        /** time: when the game saved this slot (caption.sav's own timestamp, else progress.sav's modification time);
-         * mtime: progress.sav's modification time. */
+        /** time: when the game saved this slot (TotK caption.sav's own timestamp, else the slot file's modification time);
+         * mtime: the slot file's (SLOT_FILE) modification time; caption: the slot's picture (PICTURE), or null. */
         final int index; final long time, mtime; final File caption;
         Slot(int index, long time, long mtime, File caption) { this.index = index; this.time = time; this.mtime = mtime; this.caption = caption; }
     }
-    /** slot_NN folders holding a progress.sav, by slot number. */
+    /** The slot folders (SLOT_DIR) holding their SLOT_FILE, by slot number. */
     static List<Slot> slots(File root) {
         List<Slot> out = new ArrayList<>();
         File[] children = root == null ? null : root.listFiles();
         if (children == null) return out;
         for (File child : children) {
-            String name = child.getName();
-            if (!name.matches("slot_\\d\\d") || !child.isDirectory()) continue;
-            File progress = new File(child, "progress.sav"), caption = new File(child, "caption.sav");
+            java.util.regex.Matcher name = SLOT_DIR.matcher(child.getName());
+            if (!name.matches() || !child.isDirectory()) continue;
+            File progress = new File(child, SLOT_FILE), caption = new File(child, "caption.sav"), picture = new File(child, PICTURE);
             if (!progress.isFile()) continue;
+            // TotK's caption.sav holds the in-game save time; BotW's has another layout (captionTime reads 0 from it)
             long mtime = progress.lastModified(), saved = caption.isFile() ? captionTime(caption, TimeZone.getDefault()) : 0;
-            out.add(new Slot(Integer.parseInt(name.substring(5)), saved > 0 ? saved : mtime, mtime, caption.isFile() ? caption : null));
+            out.add(new Slot(Integer.parseInt(name.group(1)), saved > 0 ? saved : mtime, mtime, picture.isFile() ? picture : null));
         }
         out.sort((a, b) -> Integer.compare(a.index, b.index));
         return out;
     }
     static long newest(List<Slot> slots) { long t = 0; for (Slot s : slots) t = Math.max(t, s.time); return t; }
-    /** Newest progress.sav modification time (comparable with a save folder's manifest, which has no captions). */
+    /** Newest slot file modification time (comparable with a save folder's manifest, which has no captions). */
     static long newestModified(List<Slot> slots) { long t = 0; for (Slot s : slots) t = Math.max(t, s.mtime); return t; }
 
     /** caption.sav is the game's hash/value save table: u32 magic 0x01020304, u32 version, u32 data offset, then from
@@ -386,7 +394,8 @@ final class SaveManager {
         c.set(v[0], v[1] - 1, v[2], v[3], v[4], v[5]);
         try { return c.getTimeInMillis(); } catch (IllegalArgumentException impossible) { return 0; }
     }
-    /** The picture inside caption.sav: the game stores a 256 x 144 baseline JPEG after a small header. Returns
+    /** The slot picture: TotK's caption.sav stores a 256 x 144 baseline JPEG after a small header, BotW's caption.jpg is
+     * one (zero-padded). Returns
      * {offset, length} of the bytes from the SOI marker to the last EOI marker, or null when there is none. */
     static int[] captionJpeg(byte[] data) {
         if (data == null) return null;
@@ -436,15 +445,15 @@ final class SaveManager {
     private static String rootOf(String path) {
         if (path.equals("option.sav") || path.endsWith("/option.sav")) return path.substring(0, path.length() - "option.sav".length());
         if (SLOT_PROGRESS.matcher(path).matches()) {
-            String slotDir = path.substring(0, path.length() - "/progress.sav".length());
+            String slotDir = path.substring(0, path.length() - SLOT_FILE.length() - 1);
             int cut = slotDir.lastIndexOf('/');
             return cut < 0 ? "" : slotDir.substring(0, cut + 1);
         }
         return null;
     }
-    /** Validate a whole dump and pick its save root: the shallowest directory holding option.sav or a
-     * slot_NN/progress.sav (when several sit at that depth — e.g. dated backups side by side — the one whose
-     * progress.sav is newest). Any absolute path, "..", or symbolic link anywhere rejects the dump; under the root,
+    /** Validate a whole dump and pick its save root: the shallowest directory holding option.sav or a slot folder with
+     * its slot file (slot_NN/progress.sav, BotW N/game_data.sav; when several sit at that depth — e.g. dated backups
+     * side by side — the one whose slot file is newest). Any absolute path, "..", or symbolic link anywhere rejects the dump; under the root,
      * more than MAX_FILES files, more than MAX_TOTAL bytes, or an oversized file rejects it too. */
     static Selection select(Collection<Candidate> all) throws Invalid {
         if (all.size() > MAX_ENTRIES) throw new Invalid("too_many", all.size() + " entries");
@@ -457,7 +466,7 @@ final class SaveManager {
         Map<String, Long> roots = new LinkedHashMap<>();
         for (Candidate c : clean) {
             String root = rootOf(c.path);
-            if (root != null) roots.merge(root, c.path.endsWith("progress.sav") ? c.mtime : Long.MIN_VALUE, Math::max);
+            if (root != null) roots.merge(root, c.path.endsWith("/" + SLOT_FILE) ? c.mtime : Long.MIN_VALUE, Math::max);
         }
         if (roots.isEmpty()) throw new Invalid("no_saves", null);
         String best = null;
@@ -984,12 +993,14 @@ final class SaveManager {
                 try { store.deleteDir(d); } catch (IOException kept) { /* harmless: the newest complete generation wins */ }
         return gen;
     }
-    /** Slots described by a manifest (no pictures): slot_NN/progress.sav entries and their times. */
+    /** Slots described by a manifest (no pictures): the slot files' entries and their times. */
     static List<Slot> slots(Manifest m) {
         List<Slot> out = new ArrayList<>();
         if (m == null) return out;
-        for (FileEntry e : m.files)
-            if (e.path.matches("slot_\\d\\d/progress\\.sav")) out.add(new Slot(Integer.parseInt(e.path.substring(5, 7)), e.mtime, e.mtime, null));
+        for (FileEntry e : m.files) {
+            java.util.regex.Matcher slot = SLOT_ENTRY.matcher(e.path);
+            if (slot.matches()) out.add(new Slot(Integer.parseInt(slot.group(2)), e.mtime, e.mtime, null));
+        }
         out.sort((a, b) -> Integer.compare(a.index, b.index));
         return out;
     }

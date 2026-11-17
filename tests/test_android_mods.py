@@ -6,12 +6,15 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 GAME = ROOT / 'games/totk'
+sys.path.insert(0, str(ROOT / 'tools'))
+import games  # noqa: E402
 SOURCES = [GAME / 'android/java/com/aure/totk/setup/ModImport.java', GAME / 'tests/mods/ModProbe.java',
            GAME / 'android/java/com/aure/totk/setup/GameBuild.java']   # Tears of the Kingdom's (mods/v143)
 MERGE = {'romfs/Pack/Actor/Player.pack.zs': b'p' * 5000, 'romfs/RSDB/Tag.Product.143.rstbl.byml.zs': b'tag',
@@ -172,6 +175,112 @@ class ModImportTests(unittest.TestCase):
         self.assertIn('a->internalDataPath', frontend[frontend.index('Player mods (runtime/romfs.c'):][:2500])
         self.assertIn('"mods/" + VERSION', SOURCES[0].read_text())
         self.assertIn('VERSION = GameBuild.VERSION', SOURCES[0].read_text())   # mods/<the game's tag>: v143, botw160
+
+
+class ActiveModsTests(unittest.TestCase):
+    """What the menu reports (ModImport.active) is what the runtime will load, for both games: TOTK_ROMFS_MODS in the
+    game folder's totk.env, else the first mods/<tag> of the game folder, the private import and the shared folder
+    (runtime/frontend_android.c); in it a manifest.tsv, romfs/manifest.tsv or the romfs/ tree (runtime/romfs.c mods_load)."""
+    @classmethod
+    def setUpClass(cls):
+        javac, cls.java = shutil.which('javac'), shutil.which('java')
+        if not javac or not cls.java:
+            raise unittest.SkipTest('javac/java not found')
+        cls.temp = tempfile.TemporaryDirectory(prefix='totk-active-mods-')
+        cls.classes = {}
+        for g in ('totk', 'botw'):
+            gen = Path(cls.temp.name) / f'gen-{g}/GameBuild.java'
+            gen.parent.mkdir(parents=True)
+            gen.write_text(games.java(g))
+            cls.classes[g] = Path(cls.temp.name) / f'classes-{g}'
+            subprocess.run([javac, '--release', '17', '-encoding', 'UTF-8', '-d', str(cls.classes[g]), str(SOURCES[0]), str(SOURCES[1]), str(gen)],
+                           check=True, capture_output=True, text=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp.cleanup()
+
+    def setUp(self):
+        self.case = Path(tempfile.mkdtemp(prefix='case-', dir=self.temp.name))
+        self.game, self.private, self.shared = self.case / 'game', self.case / 'files', self.case / 'shared'
+        for d in (self.game, self.private, self.shared):
+            d.mkdir()
+
+    def active(self, g):
+        run = subprocess.run([self.java, '-cp', str(self.classes[g]), 'com.aure.totk.setup.ModProbe', 'active', self.game, self.private, self.shared],
+                             capture_output=True, text=True, timeout=60, check=True)
+        return dict(item.split('=', 1) for item in run.stdout.split() if '=' in item)   # 'none': no summary
+
+    def put(self, base, files):
+        for path, data in files.items():
+            (base / path).parent.mkdir(parents=True, exist_ok=True)
+            (base / path).write_bytes(data)
+        return base
+
+    def manifest(self, base, files):
+        """A manifest.tsv like the owner's Second Wind merge: name, size, sha256, original sha256 or '-'."""
+        self.put(base, files)
+        (base / 'manifest.tsv').write_text('# merged\n' + ''.join(f'{n}\t{len(d)}\t{"a" * 64}\t-\n' for n, d in files.items()))
+        return base
+
+    def test_totk_env_names_the_folder_as_on_the_owners_thor(self):
+        for g, tag in (('botw', 'botw160'), ('totk', 'v143')):
+            with self.subTest(game=g):
+                romfs = self.manifest(self.game / f'mods/{tag}/romfs', {'Actor/ActorInfo.product.sbyml': b'a' * 1000, 'Pack/Bootup.pack': b'b' * 24})
+                self.put(self.game / f'mods/{tag}', {'exefs/8E9978D50BDD20B4C8395A106C27FFDE.ips': b'IPS32EEOF', 'exefs/subsdk9': b'NSO0'})
+                (self.game / 'totk.env').write_text(f'TOTK_ROMFS_MODS={romfs}\nTOTK_MOVIE_PACE=0\n')
+                a = self.active(g)
+                self.assertEqual((a['from'], a['folder'], a['layout'], a['files'], a['bytes'], a['patches'], a['modules'], a['any']),
+                                 ('env', str(romfs), 'manifest', '2', '1024', '1', 'subsdk9', 'true'))   # exefs beside a folder named romfs
+                shutil.rmtree(self.game / 'mods')
+
+    def test_search_order_without_totk_env(self):
+        g, tag = 'botw', games.values('botw')['nso_version']
+        self.assertEqual(self.active(g)['from'], '')
+        self.assertEqual(self.active(g)['any'], 'false')
+        self.put(self.shared / f'mods/{tag}', {'romfs/Pack/a.pack': b'x' * 7})
+        self.assertEqual((self.active(g)['from'], self.active(g)['files']), ('shared', '1'))
+        imported = self.private / f'mods/{tag}'
+        self.put(imported, {'romfs/Pack/b.pack': b'y' * 3, 'romfs/UI/c.bfres': b'z' * 5})
+        (imported / 'import.txt').write_text('files=2\nbytes=8\npatches=0\nmodules=\nignored=0\nsource=Merged.zip\n')
+        a = self.active(g)
+        self.assertEqual((a['from'], a['files'], a['bytes'], a['importUnused']), ('private', '2', '8', 'false'))
+        # by hand in the game folder: scanned (desktop leftovers and links left out, as runtime/romfs_scan.h), first
+        self.put(self.game / f'mods/{tag}', {'romfs/Model/x.bfres': b'm' * 11, 'romfs/Model/.DS_Store': b'junk', 'romfs/desktop.ini': b'junk'})
+        os.symlink(self.case, self.game / f'mods/{tag}/romfs/loop')
+        a = self.active(g)
+        self.assertEqual((a['from'], a['layout'], a['files'], a['bytes'], a['importUnused']), ('game', 'merge', '1', '11', 'true'))
+        # romfs/manifest.tsv decides over the files beside it
+        self.manifest(self.game / f'mods/{tag}/romfs', {'Model/x.bfres': b'm' * 11, 'Model/y.bfres': b'n' * 2})
+        self.assertEqual((self.active(g)['layout'], self.active(g)['files']), ('manifest', '2'))
+        # totk.env wins over all of them; 0 turns the mods off
+        (self.game / 'totk.env').write_text('# mine\nexport TOTK_ROMFS_MODS="0"\n')
+        a = self.active(g)
+        self.assertEqual((a['from'], a['off'], a['any'], a['importUnused']), ('env', 'true', 'false', 'true'))
+        (self.game / 'totk.env').write_text(f'TOTK_ROMFS_MODS={imported}\n')
+        a = self.active(g)
+        self.assertEqual((a['from'], a['files'], a['importUnused']), ('env', '2', 'false'))
+
+    def test_each_game_looks_for_its_own_tag(self):
+        self.put(self.game / 'mods/v143', {'romfs/a.bin': b'a'})
+        self.assertEqual(self.active('totk')['from'], 'game')
+        self.assertEqual(self.active('botw')['from'], '')
+        self.put(self.game / 'mods/botw160', {'romfs/a.bin': b'a', 'romfs/b.bin': b'b'})
+        self.assertEqual((self.active('botw')['from'], self.active('botw')['files']), ('game', '2'))
+
+    def test_a_folder_the_runtime_refuses_is_reported(self):
+        (self.game / 'mods/v143').mkdir(parents=True)
+        (self.game / 'mods/v143/romfs').write_bytes(b'not a folder')
+        a = self.active('totk')
+        self.assertEqual((a['from'], a['problem'], a['any']), ('game', 'romfs_not_folder', 'false'))
+        (self.game / 'mods/v143/romfs').unlink()
+        a = self.active('totk')
+        self.assertEqual((a['from'], a['problem'], a['any'], a['layout']), ('game', '', 'false', ''))   # an empty folder: no mods
+
+    def test_the_search_matches_the_runtime(self):
+        frontend = (GAME / 'runtime/frontend_android.c').read_text()
+        self.assertIn('const char *const roots[] = {g_data, a->internalDataPath, a->externalDataPath};', frontend)
+        self.assertIn('snprintf(p, sizeof p, "%s/totk.env", g_data); env_file(p);', frontend)
 
 
 if __name__ == '__main__':

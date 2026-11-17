@@ -11,6 +11,16 @@ public final class GameBuild {
     public static final long ROMFS_SIZE = 17052625232L;
     public static final String APP = "TotK Native", TITLE = "Tears of the Kingdom", VERSION_LABEL = "1.4.3";
     public static final String TITLE_ID = "0100F2C0115B6000";
+    /** The save layout (SaveManager): a slot is a folder whose name matches SAVE_SLOT_DIR (group 1 = its number) holding
+     *  SAVE_SLOT_FILE; SAVE_PICTURE is its picture; SAVE_SLOT_NAMES is how the texts name the slot folders. */
+    public static final String SAVE_SLOT_DIR = "slot_(\\d\\d)", SAVE_SLOT_FILE = "progress.sav",
+            SAVE_PICTURE = "caption.sav", SAVE_SLOT_NAMES = "slot_00 … slot_05";
+    /** The app flavours of this game by package (games.toml [flavour]): {package, repository, release tag prefix,
+     *  release asset prefix}. The repository is About > Project and the one the update check asks (UpdateRules.Release). */
+    public static final String[][] RELEASES = {
+        {"io.github.kurigohankamehameha.totk", "https://github.com/KuriGohan-Kamehameha/totk-android", "v", "TotK-Native-"},
+        {"io.github.kurigohankamehameha.totk.dev", "https://github.com/KuriGohan-Kamehameha/totk-android", "v", "TotK-Native-"}
+    };
     /** Whether the app's own setup can import this game (false: the game folder is filled by hand). */
     public static final boolean ONDEVICE_SETUP = true;
     /** Theme.SEL (selection) and Theme.ZONAI (accent), and the hue Theme.tint gives the surfaces (-1: unchanged). */

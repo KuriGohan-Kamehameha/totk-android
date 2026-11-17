@@ -52,7 +52,12 @@ final class InstallState {
     }
     String errorCode(String name) { return stage(name).optString("code", ""); }
     String errorText(String name) { return stage(name).optString("error", ""); }
-    int shaderVariants() { return stage("shaders").optInt("variants"); }
+    /** The shader variants the game will find: seed.vkpack's entries plus the loose files beside it (ShaderSeed, what the
+     *  runtime's seed reader sees); install.json's count of the setup's build only when the folder has none. */
+    int shaderVariants() {
+        int found = ShaderSeed.variants(new File(game, "shaders/" + GameBuild.VERSION));
+        return found > 0 ? found : stage("shaders").optInt("variants");
+    }
     String route() { return json.optString("route", ""); }
     int setupVersion() { return json.optInt("setup_version"); }
     boolean anyDone() {

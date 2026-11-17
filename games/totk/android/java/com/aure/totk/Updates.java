@@ -21,10 +21,15 @@ public final class Updates {
         public final URI base;
         public final boolean override;
         Source(URI base, boolean override) { this.base = base; this.override = override; }
-        public URI latest() { return base.resolve(UpdateRules.PROJECT + "/releases/latest"); }
-        public URI asset(String version, boolean checksum) {
-            return base.resolve(UpdateRules.PROJECT + "/releases/download/v" + version + "/" + UpdateRules.asset(version) + (checksum ? ".sha256" : ""));
+        public URI latest(UpdateRules.Release release) { return base.resolve(release.project + "/releases/latest"); }
+        public URI asset(UpdateRules.Release release, String version, boolean checksum) {
+            return base.resolve(release.project + "/releases/download/" + release.tag + version + "/" + UpdateRules.asset(release, version)
+                    + (checksum ? ".sha256" : ""));
         }
+    }
+    /** This app's releases (its flavour's repository, games/games.toml), or null for a build that is no flavour. */
+    public static UpdateRules.Release release(Context context) {
+        return UpdateRules.release(context.getPackageName(), com.aure.totk.setup.GameBuild.RELEASES);
     }
     public static Source source(Context context) throws IOException {
         File override = new File(context.getFilesDir(), "update-source.txt");
@@ -59,9 +64,10 @@ public final class Updates {
             String answer = null;
             try {
                 Source source = source(app);
+                UpdateRules.Release release = release(app);
                 answer = UpdateRules.checkAndStore(app.getFilesDir(), UpdateRules.enabled(app.getFilesDir()), online(app), version(app), app.getPackageName(),
-                        source.override, source.base, () -> {
-                            HttpURLConnection connection = transfer.connect(source.latest(), "HEAD", 2400);
+                        source.override, source.base, release, () -> {
+                            HttpURLConnection connection = transfer.connect(source.latest(release), "HEAD", 2400);
                             try {
                                 int status = connection.getResponseCode();
                                 transfer.checkCancelled();

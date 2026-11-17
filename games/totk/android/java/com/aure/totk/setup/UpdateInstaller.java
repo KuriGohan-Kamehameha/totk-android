@@ -49,17 +49,19 @@ final class UpdateInstaller {
         worker.execute(() -> {
             try {
                 Updates.Source source = Updates.source(activity);
+                UpdateRules.Release release = Updates.release(activity);
+                if (release == null) throw new IOException("This build has no release source.");
                 apk = own(File.createTempFile("totk-update-", ".apk", activity.getCacheDir()));
                 checksum = own(File.createTempFile("totk-update-", ".sha256", activity.getCacheDir()));
-                transfer.download(source.base, source.override, source.asset(version, false), apk, 2L * 1024 * 1024 * 1024, (count, size) -> {
+                transfer.download(source.base, source.override, source.asset(release, version, false), apk, 2L * 1024 * 1024 * 1024, (count, size) -> {
                     bytes = count; total = size;
                     // The menu refresh timer reads these; don't queue one UI message per chunk.
                 });
                 postStatus("Verifying download…");
-                transfer.download(source.base, source.override, source.asset(version, true), checksum, 4096, (count, size) -> { });
+                transfer.download(source.base, source.override, source.asset(release, version, true), checksum, 4096, (count, size) -> { });
                 transfer.checkCancelled();
                 transfer.finishDownloads();
-                expectedSha256 = UpdateRules.sha256(new String(java.nio.file.Files.readAllBytes(checksum.toPath()), java.nio.charset.StandardCharsets.UTF_8), UpdateRules.asset(version));
+                expectedSha256 = UpdateRules.sha256(new String(java.nio.file.Files.readAllBytes(checksum.toPath()), java.nio.charset.StandardCharsets.UTF_8), UpdateRules.asset(release, version));
                 if (!expectedSha256.equals(Updates.digest(apk))) throw new IOException("The update checksum does not match. Nothing was installed.");
                 verifyArchive();
                 transfer.checkCancelled();

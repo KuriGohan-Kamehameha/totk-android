@@ -39,6 +39,11 @@ meaning = "The game's title id (saves export/import in SaveManager; the runtime'
 totk = "0100F2C0115B6000"
 botw = "01007EF00011E000"
 
+[var.save_slots]
+meaning = "The game's save layout under the save root (SaveManager: the slot list, import detection, export and backups): dir = a slot folder's name (regex, group 1 = the slot number), file = the file that makes the folder a slot, picture = the slot's picture (a JPEG, or a file with one inside), names = how the menu's texts name the slot folders. option.sav at the save root is common"
+totk = { dir = 'slot_(\d\d)', file = "progress.sav", picture = "caption.sav", names = "slot_00 … slot_05" }
+botw = { dir = '(\d)', file = "game_data.sav", picture = "caption.jpg", names = "0 … 5" }
+
 [var.main_build_id]
 meaning = "Build id of the supported main (mods: exefs/<build id>.ips is applied only when it names this main; the runtime reads it from main itself, this is for docs and mod authors). TotK's 1.4.3 files are pinned by sha256 instead"
 totk = "pinned by games/totk/assets/expected-v1.4.3.json"
@@ -142,6 +147,8 @@ botw = "BOTW"
 # key / key_pass_file are file names in the build machine's key folder (TOTK_KEYS_DIR, default /root/totk-work/keys).
 # The keys never enter git. debuggable = a dev build: --dev-key (the key is created when missing), versionCode from
 # the clock. version_code absent: MAJOR*10000 + MINOR*100 + PATCH of version_name.
+# repository = the app's own GitHub repository (About > Project, and the one the update check asks); its releases are
+# tagged <release_tag><version> and carry <release_asset><version>.apk (+ .sha256). Flavours sharing a package share these.
 
 [flavour.totk.fork]
 package = "io.github.kurigohankamehameha.totk"
@@ -151,6 +158,9 @@ version_code = 10002
 key = "fork-release.p12"
 key_pass_file = "fork-release.pass"
 debuggable = false
+repository = "https://github.com/KuriGohan-Kamehameha/totk-android"
+release_tag = "v"
+release_asset = "TotK-Native-"
 
 [flavour.totk.dev]
 package = "io.github.kurigohankamehameha.totk.dev"
@@ -158,6 +168,9 @@ label = "TotK Native (dev)"
 version_name = "1.0.1-dev"
 key = "totk-dev.pem"
 debuggable = true
+repository = "https://github.com/KuriGohan-Kamehameha/totk-android"
+release_tag = "v"
+release_asset = "TotK-Native-"
 
 [flavour.botw.release]
 package = "io.github.p1r4n351.botw"
@@ -166,6 +179,9 @@ version_name = "0.2.0-pre.1"
 version_code = 200
 key = "botw-release.pem"
 debuggable = false
+repository = "https://github.com/P1R4N351/botw-android"
+release_tag = "botw-v"
+release_asset = "BotW-Native-"
 
 [flavour.botw.dev]
 package = "io.github.p1r4n351.botw"
@@ -173,6 +189,9 @@ label = "BotW Native"
 version_name = "0.2.0-dev"
 key = "botw-dev.pem"
 debuggable = true
+repository = "https://github.com/P1R4N351/botw-android"
+release_tag = "botw-v"
+release_asset = "BotW-Native-"
 
 # ---------------------------------------------------------------- code that still branches on the game
 # Every file whose code branches on the game itself: C on GAME_BOTW* / TOTK_GAME_V143, Python or shell on a game's tag

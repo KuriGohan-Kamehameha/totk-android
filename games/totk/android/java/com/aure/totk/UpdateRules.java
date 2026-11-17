@@ -14,10 +14,32 @@ import java.util.regex.Pattern;
 
 /** Update policy and private-file state, shared by the game and :setup and exercised on the host JVM. */
 public final class UpdateRules {
-    public static final String PROJECT = "/AurelioB/totk-android";
-    public static final String ASSET_PREFIX = "TotK-Native-";
     private static final Pattern VERSION = Pattern.compile("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)");
+    private static final Pattern REPOSITORY = Pattern.compile("https://github\\.com(/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)");
+    private static final Pattern NAME = Pattern.compile("[A-Za-z0-9_.-]*");
     private UpdateRules() { }
+    /** Where one app's releases are (games/games.toml [flavour], GameBuild.RELEASES): only the app with this package
+     *  asks this repository, for tags <tag><version> carrying <asset><version>.apk. Each app has its own, so no app is
+     *  offered another app's (or upstream's) release. */
+    public static final class Release {
+        public final String pkg, repository, project, tag, asset;
+        public Release(String pkg, String repository, String tag, String asset) {
+            Matcher m = REPOSITORY.matcher(repository == null ? "" : repository);
+            if (pkg == null || pkg.isEmpty() || !m.matches() || tag == null || !NAME.matcher(tag).matches()
+                    || asset == null || asset.isEmpty() || !NAME.matcher(asset).matches()) throw new IllegalArgumentException("Invalid release source");
+            this.pkg = pkg; this.repository = repository; this.project = m.group(1); this.tag = tag; this.asset = asset;
+        }
+    }
+    /** This package's row of table ({package, repository, tag, asset} rows), or null: an app that is none of the
+     *  flavours (a build without --flavour) has no releases to check. */
+    public static Release release(String pkg, String[][] table) {
+        if (pkg != null && table != null)
+            for (String[] row : table)
+                if (row != null && row.length == 4 && pkg.equals(row[0])) {
+                    try { return new Release(row[0], row[1], row[2], row[3]); } catch (IllegalArgumentException invalid) { return null; }
+                }
+        return null;
+    }
     public static boolean version(String value) { return value != null && VERSION.matcher(value).matches(); }
     public static int compare(String left, String right) {
         if (!version(left) || !version(right)) throw new IllegalArgumentException("Invalid release version");
@@ -28,13 +50,14 @@ public final class UpdateRules {
         }
         return 0;
     }
-    public static String location(String value, URI source, boolean override) {
+    public static String location(String value, URI source, boolean override, Release release) {
+        if (release == null) return null;
         try {
             URI uri = new URI(value);
             if (uri.getRawUserInfo() != null || uri.getRawQuery() != null || uri.getRawFragment() != null) return null;
             if (!override && (!"https".equals(uri.getScheme()) || !"github.com".equals(uri.getHost()) || uri.getPort() != -1)) return null;
             if (override && !sameOrigin(uri, source)) return null;
-            String prefix = PROJECT + "/releases/tag/v";
+            String prefix = release.project + "/releases/tag/" + release.tag;
             String path = uri.getRawPath();
             return path != null && path.startsWith(prefix) && version(path.substring(prefix.length())) ? path.substring(prefix.length()) : null;
         } catch (Exception malformed) { return null; }
@@ -50,9 +73,9 @@ public final class UpdateRules {
         return "https".equals(uri.getScheme()) && uri.getPort() == -1 && host != null
                 && (host.equals("github.com") || host.endsWith(".githubusercontent.com"));
     }
-    public static String asset(String version) {
+    public static String asset(Release release, String version) {
         if (!version(version)) throw new IllegalArgumentException("Invalid release version");
-        return ASSET_PREFIX + version + ".apk";
+        return release.asset + version + ".apk";
     }
     public static String sha256(String text, String filename) throws IOException {
         Matcher m = Pattern.compile("([0-9a-fA-F]{64}) [ *]" + Pattern.quote(filename) + "\\r?\\n?").matcher(text);
@@ -73,17 +96,20 @@ public final class UpdateRules {
         return null;
     }
     public interface Head { String location() throws IOException; }
-    public static String check(boolean enabled, boolean online, String current, String pkg, boolean override, URI source, Head head) {
-        if (!enabled || !online || !version(current) || (!"com.aure.totk".equals(pkg) && !override)) return null;
+    /** The newer version to offer, or null. Only a release build asks (current is x.y.z: a pre-release or dev build,
+     *  e.g. 0.2.0-pre.1, never does), only for its own package's repository (release), and only about a newer x.y.z. */
+    public static String check(boolean enabled, boolean online, String current, String pkg, boolean override, URI source,
+                               Release release, Head head) {
+        if (!enabled || !online || !version(current) || release == null || (!release.pkg.equals(pkg) && !override)) return null;
         try {
-            String latest = location(head.location(), source, override);
+            String latest = location(head.location(), source, override, release);
             return latest != null && compare(latest, current) > 0 ? latest : null;
         } catch (IOException | RuntimeException failed) { return null; }
     }
     /** An offer is actionable only after :setup can recover it, including after the game process stops. */
     public static String checkAndStore(File files, boolean enabled, boolean online, String current, String pkg,
-                                       boolean override, URI source, Head head) {
-        String version = check(enabled, online, current, pkg, override, source, head);
+                                       boolean override, URI source, Release release, Head head) {
+        String version = check(enabled, online, current, pkg, override, source, release, head);
         if (version == null) return null;
         try { setPending(files, version); return version; }
         catch (IOException | RuntimeException failed) { return null; }

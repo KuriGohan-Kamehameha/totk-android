@@ -33,6 +33,9 @@ import java.util.Map;
  *    jpeg FILE                       SaveManager.captionJpeg: offset length, or none
  *    captime FILE ZONE               SaveManager.captionTime in time zone ZONE: yyyy-MM-ddTHH:mm:ss, or none
  *    slots ROOT ZONE                 SaveManager.slots: index:time ... (time as above, in ZONE as the default zone)
+ *    pictures ROOT                   SaveManager.slots: index:picture file name:JPEG offset,length ... ("-" = none)
+ *    mslots ROOT                     SaveManager.slots of ROOT's manifest (what the save folder's side shows): indices
+ *    top                             SaveManager.TOP and exportName(0)
  *    push TOP SNAPSHOT FAILAFTER     SaveManager.readFolder + push on a plain-directory store without renames; FAILAFTER
  *                                    (-1 = never) makes that write store half of its bytes and fail, like a killed upload
  *    read TOP                        SaveManager.readFolder: gen NAME FILES | incomplete PROBLEM | none
@@ -157,6 +160,24 @@ public final class SavesProbe {
                         answer = out.toString();
                         break;
                     }
+                    case "pictures": {
+                        StringBuilder out = new StringBuilder();
+                        for (SaveManager.Slot s : SaveManager.slots(new File(w[1]))) {
+                            int[] j = s.caption == null ? null : SaveManager.captionJpeg(Files.readAllBytes(s.caption.toPath()));
+                            out.append(out.length() == 0 ? "" : " ").append(s.index).append(':').append(s.caption == null ? "-" : s.caption.getName())
+                               .append(':').append(j == null ? "-" : j[0] + "," + j[1]);
+                        }
+                        answer = out.toString();
+                        break;
+                    }
+                    case "mslots": {
+                        StringBuilder out = new StringBuilder();
+                        for (SaveManager.Slot s : SaveManager.slots(SaveManager.manifest(new File(w[1]), null, "probe", "host", 0)))
+                            out.append(out.length() == 0 ? "" : " ").append(s.index);
+                        answer = out.toString();
+                        break;
+                    }
+                    case "top": answer = SaveManager.TOP + "|" + SaveManager.exportName(0).replaceAll("\\d", "N"); break;
                     case "push": {
                         DirStore store = new DirStore(new File(w[1]), Integer.parseInt(w[3]));
                         SaveManager.FolderState state = SaveManager.readFolder(store);

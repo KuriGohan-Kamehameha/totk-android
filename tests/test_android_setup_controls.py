@@ -380,7 +380,7 @@ class SetupControlTests(unittest.TestCase):
         process.write_text('package android.os; public class Process { public static int myPid() { return 42; } }')
         cls.classes = cls.work / 'classes'
         cls.command([javac, '--release', '17', '-d', cls.classes, probe, log, process,
-                     *[JAVA / name for name in ('GameLock.java', 'SaveManager.java', 'Settings.java')]])
+                     *[JAVA / name for name in ('GameLock.java', 'SaveManager.java', 'Settings.java', 'GameBuild.java')]])
         native = cls.work / 'input.c'
         input_source = (GAME / 'runtime/input.c').read_text()
         body = section(input_source, 'static void *input_file(', 'static void input_file_start(')

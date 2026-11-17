@@ -169,7 +169,7 @@ class GameLockTests(unittest.TestCase):
         native.write_text(NATIVE)
         cls.classes = cls.work / 'classes'
         cls.run_command([javac, '--release', '17', '-d', cls.classes, probe,
-                         *[JAVA / name for name in ('GameLock.java', 'SaveManager.java', 'Settings.java')]])
+                         *[JAVA / name for name in ('GameLock.java', 'SaveManager.java', 'Settings.java', 'GameBuild.java')]])
         cls.run_command([sys.executable, GAME / 'scripts/make_pins_header.py', GAME / 'assets/expected-v1.4.3.json', cls.work / 'totk_pins.h'])
         jni = Path(javac).resolve().parents[1] / 'include'
         cls.lib, cls.exe = cls.work / 'native.so', cls.work / 'native'

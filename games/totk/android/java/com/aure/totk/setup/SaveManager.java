@@ -37,7 +37,7 @@ import java.util.zip.ZipOutputStream;
  * tests/test_android_saves.py runs it on a host JVM; SaveMirror and SetupActivity are the Android glue. */
 final class SaveManager {
     private SaveManager() { }
-    static final String TITLE_ID = "0100F2C0115B6000";
+    static final String TITLE_ID = GameBuild.TITLE_ID;
     /** Top folder of an export zip and of the mirror folder; the manifest sits inside it next to the save files. */
     static final String TOP = "TotK Native saves", MANIFEST = "totk-native-saves.json";
     static final int MAX_FILES = 500, KEEP_BACKUPS = 10;

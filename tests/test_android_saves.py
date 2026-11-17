@@ -15,7 +15,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 TOTK = ROOT / 'games/totk'
-SOURCES = [TOTK / 'android/java/com/aure/totk/setup/SaveManager.java', TOTK / 'android/java/com/aure/totk/setup/Settings.java',
+SOURCES = [TOTK / 'android/java/com/aure/totk/setup/SaveManager.java', TOTK / 'android/java/com/aure/totk/setup/GameBuild.java', TOTK / 'android/java/com/aure/totk/setup/Settings.java',
            TOTK / 'android/java/com/aure/totk/setup/GameLock.java', TOTK / 'tests/saves/SavesProbe.java']
 SLOT_FILES = {'progress.sav': 2307856, 'caption.sav': 21620, 'footprint.sav': 614760, 'direct_file_save_related.sav': 1152}
 

@@ -13,7 +13,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 GAME = ROOT / 'games/totk'
 JAVA = GAME / 'android/java/com/aure/totk/setup'
-SOURCES = [JAVA / f'{name}.java' for name in ('DriverImport', 'SaveManager', 'Settings', 'GameLock')]
+SOURCES = [JAVA / f'{name}.java' for name in ('DriverImport', 'SaveManager', 'Settings', 'GameLock', 'GameBuild')]
 SOURCES.append(GAME / 'tests/drivers/DriverProbe.java')
 ELF = bytearray(b'\x7fELF\x02\x01' + b'\0' * 58)
 ELF[18] = 183

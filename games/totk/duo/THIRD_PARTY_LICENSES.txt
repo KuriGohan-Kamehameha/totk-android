@@ -1,5 +1,6 @@
-Third-party code compiled into libduo_host.so (Breath of the Wild build), besides Eden Duo itself (Eden-Duo.txt)
-================================================================================================================
+Third-party code compiled into libduo_host.so, besides Eden Duo itself (Eden-Duo.txt)
+======================================================================================
+Both builds unless marked "Tears of the Kingdom build".
 
 nlohmann/json 3.12.0 (vendor/third_party/nlohmann) -- MIT
     Copyright (c) 2013-2025 Niels Lohmann. Text below ("nlohmann/json").
@@ -21,6 +22,20 @@ ASTC decoder (vendor/emu/src/video_core/textures/astc.cpp) -- Apache-2.0 portion
 
 CityHash (vendor/emu/src/common/cityhash.cpp, cityhash.h) -- MIT
     Copyright (c) 2011 Google, Inc. (Geoff Pike, Jyrki Alakuijala). MIT text below ("MIT").
+
+zstd at commit 33618c8 (1.5.8 by its zstd.h), as Eden Duo pins it (vendor/third_party/zstd: lib/common, lib/decompress,
+zstd.h, zstd_errors.h; the decompressor only) -- Tears of the Kingdom build -- BSD (dual-licensed BSD / GPLv2; the BSD
+option is taken). Copyright (c) Meta Platforms, Inc. and affiliates. Text below ("zstd").
+
+stb_truetype 1.26 (vendor/companions/native/modules/third_party/stb_truetype.h) -- Tears of the Kingdom build --
+public domain (or MIT). Sean Barrett and contributors; the licence statement is at the end of the header.
+
+Tears of the Kingdom reader (vendor/companions/native/modules/totk_reader) -- Tears of the Kingdom build -- MIT.
+    This app's own reader (games/totk/runtime) and two files written for the module. Text below ("Tears of the
+    Kingdom reader (MIT)").
+
+The Tears of the Kingdom module's wonder_assets and wonder_font (vendor/companions/native/modules) are Eden Duo
+Companions code, GPL-3.0-or-later, covered by Eden-Duo.txt.
 
 LLVM libc++ (the NDK's libc++_shared.so and the parts of it compiled in) -- Apache-2.0 with LLVM exceptions:
     LLVM-libc++.txt.

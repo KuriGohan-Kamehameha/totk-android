@@ -1,0 +1,586 @@
+{
+ "format": 1,
+ "_note": "Eden Duo-generated art (GPL-3.0-or-later), copied unchanged from the Breath of the Wild package by tools/totk/gen_manifest.py. No game art is shipped.",
+ "files": {
+  "assets/cmdbar-228x112-normal.png": {
+   "origin": "generated",
+   "source": "tools/i13-buttons.py -- command bars drawn from measured geometry (rounded corners, lines, arrows, blur, seeded noise)",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/cmdbar-228x112-normal.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/i13-tw-clockplate.png": {
+   "origin": "generated",
+   "source": "tools/i13-timeweather.py -- ImageDraw rounded rectangle, blurred",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/i13-tw-clockplate.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/map-circle-outside.png": {
+   "origin": "generated",
+   "source": "tools/add-map-view.py -- ImageDraw ellipse cut-out",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/map-circle-outside.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/pg-ready-halo-mask.png": {
+   "origin": "generated",
+   "source": "tools/restyle-pause-glass.py -- computed radial halo mask",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/pg-ready-halo-mask.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/pg-ready-lift-cover.png": {
+   "origin": "generated",
+   "source": "tools/restyle-pause-glass.py -- computed lift profile mask",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/pg-ready-lift-cover.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/ready-circle-mask.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py, migrate-native-ready.py / add-map-view.py -- ImageDraw polygons, ellipses, rounded rects (alpha masks for romfs composites)",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/ready-circle-mask.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/ready-corner-frame.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py, migrate-native-ready.py -- ImageDraw outlines (restyle whitens: alpha kept)",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/ready-corner-frame.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/ready-corner-mask.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py, migrate-native-ready.py / add-map-view.py -- ImageDraw polygons, ellipses, rounded rects (alpha masks for romfs composites)",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/ready-corner-mask.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/ready-food-seams.png": {
+   "origin": "generated",
+   "source": "tools/ready-circles-final.py -- ImageDraw lines and circle",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/ready-food-seams.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/ready-native-arrow-frame.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py, migrate-native-ready.py -- ImageDraw outlines (restyle whitens: alpha kept)",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/ready-native-arrow-frame.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/ready-native-arrow-mask.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py, migrate-native-ready.py / add-map-view.py -- ImageDraw polygons, ellipses, rounded rects (alpha masks for romfs composites)",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/ready-native-arrow-mask.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/ready-native-circle-frame.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py, migrate-native-ready.py -- ImageDraw outlines (restyle whitens: alpha kept)",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/ready-native-circle-frame.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/ready-native-secondary-condition-000.png": {
+   "origin": "generated",
+   "source": "tools/migrate-native-ready.py -- ImageDraw arc gauge frames (restyle recolours exact pixels)",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/ready-native-secondary-condition-000.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/ready-native-secondary-frame.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py, migrate-native-ready.py -- ImageDraw outlines (restyle whitens: alpha kept)",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/ready-native-secondary-frame.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/ready-native-secondary-mask.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py, migrate-native-ready.py / add-map-view.py -- ImageDraw polygons, ellipses, rounded rects (alpha masks for romfs composites)",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/ready-native-secondary-mask.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-000.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-000.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-001.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-001.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-002.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-002.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-003.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-003.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-004.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-004.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-005.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-005.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-006.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-006.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-007.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-007.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-008.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-008.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-009.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-009.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-010.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-010.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-011.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-011.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-012.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-012.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-013.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-013.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-014.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-014.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-015.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-015.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-016.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-016.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-017.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-017.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-018.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-018.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-019.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-019.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-020.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-020.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-021.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-021.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-022.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-022.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-023.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-023.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-024.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-024.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-025.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-025.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-026.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-026.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-027.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-027.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-028.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-028.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-029.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-029.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-030.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-030.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-031.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-031.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-032.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-032.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-033.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-033.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-034.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-034.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-035.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-035.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-036.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-036.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-037.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-037.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-038.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-038.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-039.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-039.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-040.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-040.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-041.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-041.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-042.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-042.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-043.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-043.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-044.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-044.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-045.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-045.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-046.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-046.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-047.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-047.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-048.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-048.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-049.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-049.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-050.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-050.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-051.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-051.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-052.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-052.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-053.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-053.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-054.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-054.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-055.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-055.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-056.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-056.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-057.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-057.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-058.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-058.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-059.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-059.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-060.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-060.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-061.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-061.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-062.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-062.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-063.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-063.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-064.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-064.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-065.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-065.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-066.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-066.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-067.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-067.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-068.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-068.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-069.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-069.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-070.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-070.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-071.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-071.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-072.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-072.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-073.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-073.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-074.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-074.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-075.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-075.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-076.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-076.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-077.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-077.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-078.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-078.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-079.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-079.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-080.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-080.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-081.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-081.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-082.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-082.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-083.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-083.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-084.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-084.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-085.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-085.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-086.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-086.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-087.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-087.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-088.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-088.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-089.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-089.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-090.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-090.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-091.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-091.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-092.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-092.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-093.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-093.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-094.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-094.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-095.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-095.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-096.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-096.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-097.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-097.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-098.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-098.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-099.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-099.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/stamina-100.png": {
+   "origin": "generated",
+   "source": "tools/add-ready-layout.py -- ImageDraw ring arcs, one per percent",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/stamina-100.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  }
+ }
+}

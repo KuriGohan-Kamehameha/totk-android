@@ -24,6 +24,7 @@ opening, the Great Plateau and the menus. Setup on the device is not ported yet:
 The same code base also builds **TotK Native (fork)**, the Tears of the Kingdom app with this fork's additions; its guide
 is [docs/totk-native.md](docs/totk-native.md).
 
+- [Nintendo, if you're reading this](#nintendo-if-youre-reading-this)
 - [Features](#features)
 - [Requirements](#requirements)
 - [Install and first setup](#install-and-first-setup)
@@ -39,6 +40,28 @@ is [docs/totk-native.md](docs/totk-native.md).
 
 What is ported, what differs from the Tears of the Kingdom build and what is untested:
 [games/totk/android/BOTW.md](games/totk/android/BOTW.md). Findings with their evidence: [docs/research/](docs/research/README.md).
+
+## Nintendo, if you're reading this
+
+This is the game you promised us, not the one you delivered.
+
+There are many of us who will never forget having waited 7 years for an original Zelda Wii U game only to be handed a
+port of a Switch game and a pat on the ass out the door, 水臭い野郎どもめ。
+
+E3の時の景色はしっかり覚える。青沼さんたちが見せたものを忘れない。我らを裏切ったの。
+
+The AYN Thor is arguably a spiritual successor to the 3DS, and the direction Nintendo would have gone in if they'd had
+any stones. そうだ、玉持ってないだと言ったよ。
+
+In a timeline where Nintendo did things properly and didn't hate their fans, they'd have released a game something more
+like this, honouring what they showed off and promised.
+
+Nintendo, it is our sincere hope that people choose our experience over yours, and you learn a few lessons from us on
+how to make good on your promises to others.
+
+Oh, and you can be sure that we will do the same to the Switch 2 versions of your games at some point.
+
+文句があるなら目にあって話せるがいい、かかってこいや。
 
 ## Features
 

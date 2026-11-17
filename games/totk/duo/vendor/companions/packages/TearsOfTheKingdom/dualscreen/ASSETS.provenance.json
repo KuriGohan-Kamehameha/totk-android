@@ -2,10 +2,20 @@
  "format": 1,
  "_note": "Eden Duo-generated art (GPL-3.0-or-later), copied unchanged from the Breath of the Wild package by tools/totk/gen_manifest.py. No game art is shipped.",
  "files": {
+  "assets/cmdbar-216x112-normal.png": {
+   "origin": "generated",
+   "source": "tools/i13-buttons.py -- command bars drawn from measured geometry (rounded corners, lines, arrows, blur, seeded noise)",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/cmdbar-216x112-normal.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
   "assets/cmdbar-228x112-normal.png": {
    "origin": "generated",
    "source": "tools/i13-buttons.py -- command bars drawn from measured geometry (rounded corners, lines, arrows, blur, seeded noise)",
    "copied_from": "packages/BreathOfTheWild/dualscreen/assets/cmdbar-228x112-normal.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
+  },
+  "assets/cmdbar-520x112-normal.png": {
+   "origin": "generated",
+   "source": "tools/i13-buttons.py -- command bars drawn from measured geometry (rounded corners, lines, arrows, blur, seeded noise)",
+   "copied_from": "packages/BreathOfTheWild/dualscreen/assets/cmdbar-520x112-normal.png at 54ab4e2bb76a702be743049be3c256f7344c0147"
   },
   "assets/i13-tw-clockplate.png": {
    "origin": "generated",

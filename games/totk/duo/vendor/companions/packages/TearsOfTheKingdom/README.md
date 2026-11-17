@@ -1,8 +1,8 @@
 # The Legend of Zelda: Tears of the Kingdom — dual-screen companion
 
 Title ID `0100F2C0115B6000`, game version **1.4.3** only (main module ID
-`277178B7DBA1B6D4949A84778D4ABC58B31B34F5`). Read-only. Status: **0.2.0, tested in the desktop
-host harness only; not yet run on a device.**
+`277178B7DBA1B6D4949A84778D4ABC58B31B34F5`). Reads the game; item actions only in TotK Native (see
+below). Status: **0.3.0, tested in the desktop host harness only; not yet run on a device.**
 
 ## The rule this package follows
 
@@ -35,13 +35,20 @@ own empty state (`—`, `—°`, *Area unavailable*) or is left out (list below)
     Wild ranks them); a vertical swipe turns the pane;
   - the area caption (*Area unavailable* until an area name is read; the layer is not repeated
     there); the command bar: **Inventory**, **Map** (two buttons centred: no Quest page yet);
+  - the **quick picker**: a tap on the weapon, bow or shield corner opens that pouch over the page
+    in Breath of the Wild's picker (panel, grid of cells with durability bars and fused materials, the
+    equipped item lit and selected); a tap selects another, and the confirm bar beside *Back* shows its
+    action (*Equip* / *Unequip*). It gives way to the pause menu, a cutscene and loading;
   - a cutscene dims the page; with the pause menu open it says *Purah Pad open on the main
     screen*. The title screen, loading and another game version show Breath of the Wild's covers
     (*Choose your adventure on the main screen*, *Now loading...*, *The Purah Pad cannot connect /
     Requires Tears of the Kingdom version 1.4.3*).
 - **Inventory** (Tears of the Kingdom's own page, in Breath of the Wild's palette and art): the eight
   categories as icon grids with counts (`x12`), durability bars and fused materials; a tap shows the
-  item's in-game name, description and facts (durability as a % of the item's maximum, C43).
+  item's in-game name, description and facts (durability as a % of the item's maximum, C43), and its
+  actions as Breath of the Wild's Inventory action bar (up to three, the primary rightmost: *Equip*,
+  *Eat*, *Take out*, *Fuse to arrows*, ...), each disabled one dimmed with its reason, and above them
+  the latest request's line (pending, done, refused or failed).
   Both pages end with the Ready page's overlay block: the pause-menu band (input blocked), the
   cutscene dim and the title, loading, unknown and wrong-build covers. The Map page's marker is
   Breath of the Wild's full-map one (101 px, yellow).
@@ -80,6 +87,9 @@ is `totk.ready.fuse.*`.
 | `totk.ready.header.text`, `totk.ready.sensor.*` | the layer (see above) |
 | `totk.map.*`, `totk.mini.tile.N`, `totk.coords` | the player actor, `MapData.CurrentLayer` |
 | `totk.fx.spin.N` | the loading spinner's dots, as Breath of the Wild's |
+| `totk.quick.*` | the quick picker: open, title, cells (`.N.icon`, `.equipped`, `.selected`, `.durability_pct`, ...), the selection |
+| `totk.inv.act.*`, `totk.quick.act.*` | the selected item's actions: `.count`, per button `.N.on`, `.enabled`, `.disabled`, `.label`, `.reason`, `.reason_text` |
+| `totk.act.*` | the latest request: `.state` (0 none, 1 pending, 2 done, 3 refused, 4 failed), one flag each, `.reason` (the code, unchanged), `.line`; `.ready`, `.ready_reason`: the action host's own state |
 
 ## Breath of the Wild's Ready widgets, kept and left out
 
@@ -103,7 +113,7 @@ Left out (`READY_DROP` in the generator), and why:
 | temperature glows, dial halves and needle, clothing card | no temperature read yet (the dial shows `—°`) |
 | attack and defence numbers on the corner cards | not read yet |
 | area name, marker caption | no area read yet (*Area unavailable* shows) |
-| quick picker (Ready 320-571, 593-807, 864-989) and the corner and well taps | no item actions in a read-only module |
+| quick picker (Ready 320-571, 593-807, 864-989) and the corner and well taps | Breath of the Wild's picker runs on its module's actions; Tears of the Kingdom's own picker, in its style, replaces it (the three gear corners open it) |
 | secondary swap hint, arrow up/down hints | Tears of the Kingdom has no weapon swap; arrow selection is not offered (the condition arc is kept, as its empty track: no maximum fuse durability is read) |
 | view cone, context caption, fx probe | Breath of the Wild-only reads |
 | cover frames (`state-native-frame`) | Breath of the Wild's conductor-frame art; Tears of the Kingdom has none |
@@ -117,10 +127,16 @@ Left out (`READY_DROP` in the generator), and why:
   them, so any other build is refused (*unsupported*), and a sample taken while the game tears
   its state down is retaken rather than shown half-changed. `totk_reader/totk_gamedata.c` (MIT)
   reads the stamina and shrine flags with the same table layout, only after the reader has
-  accepted the build. Nothing is written and no game code is called.
-- **No item actions.** TotK Native equips, eats and takes out items by calling the game's own
-  pouch functions; Eden Duo offers no guest calls on Android, so this package is read-only. The
-  quick picker over the disc is left out, and the old `- Map` / `+ Menu` buttons are gone (C28).
+  accepted the build. The module writes nothing and calls no game code.
+- **Item actions only in TotK Native.** Equipping, eating and taking out an item means calling the
+  game's own pouch functions, which Eden Duo cannot do on Android (no guest calls under NCE). TotK
+  Native's app embeds this package with Eden Duo's runtime and gives the module a table
+  (`native/modules/totk_native_actions.h`, bound with `totk_native_port_bind_actions`, which Eden's
+  loader never calls): the actions its own runtime offers for an item (the game's menu rules), its
+  state, and requests that its runtime carries out on the game's frame-end thread, one at a time,
+  re-checked there. The module only shows them and forwards a tap (`totk.act`). In Eden Duo there is
+  no table: the buttons show what the game's menus would offer, disabled, *Item actions need the
+  TotK Native app*, and a tap requests nothing. The old `- Map` / `+ Menu` buttons are gone (C28).
 - **Art and text** are decoded at runtime from the player's own romfs, as `module:totk:` images:
   item icons (`UI/Tex/Icon/<actor>.bntx.zs`), layout textures from
   `UI/LayoutArchive/Common.Product.140.Nin_NX_NVN.blarc.zs` (`timg/__Combined.bntx`; the generator's
@@ -154,7 +170,7 @@ cmake -S native/modules -B build-native-android -G Ninja -DEDEN_SOURCE_ROOT=/abs
 cmake --build build-native-android --target dsmod-totk
 llvm-strip --strip-all -o totk-android.so build-native-android/0100F2C0115B6000.so
 python3 tools/build_dualscreen_package.py --package packages/TearsOfTheKingdom --output dist \
-  --version 0.2.0 --min-runtime 22 --module android-arm64-v8a=totk-android.so \
+  --version 0.3.0 --min-runtime 22 --module android-arm64-v8a=totk-android.so \
   --build-id 277178B7DBA1B6D4949A84778D4ABC58B31B34F5000000000000000000000000
 ```
 
@@ -166,7 +182,10 @@ food, Lights of Blessing, sages, position), reading the owner's own romfs files.
 against Breath of the Wild's render: in game (Surface, Sky, Depths), pause menu, cutscene, title
 screen, loading, low hearts (Food page, food card open and closed), another game version;
 Inventory with a selected item; the Map page; the pause-menu band over Inventory and Map (a tap
-under it does not leave the page).
+under it does not leave the page). Item actions with a fake action table standing in for TotK
+Native's (a request reaches it with the tapped item and ends as done; a second tap while one is
+pending is dropped; the quick picker equips from its confirm bar) and without one (every action
+disabled with its reason, nothing requested).
 
 ## Not yet
 
@@ -183,7 +202,8 @@ under it does not leave the page).
   decode them, and the host loads a module only on a build its `build_ids` lists (MODULE_GUIDE §3:
   a module never implies support for an unlisted build).
 - Languages other than English (US) for item names and descriptions.
-- Item actions (need guest calls).
+- Item actions in Eden Duo itself (they need guest calls; a load-time helper is the researched
+  route). TotK Native's route is not yet checked on a device through this page.
 
 ## Credits
 

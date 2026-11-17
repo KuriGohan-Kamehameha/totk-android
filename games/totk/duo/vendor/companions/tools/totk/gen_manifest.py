@@ -13,8 +13,12 @@ Tears of the Kingdom's values. So this script does not draw a page of its own. I
     provenance (all of it is Eden Duo-generated, none is game art);
   - identity (spec C04, C38, C60): the Sheikah blue becomes Tears of the Kingdom's teal, "Sheikah Slate" becomes
     "Purah Pad", the wrong-build cover asks for Tears of the Kingdom 1.4.3;
-  - Breath of the Wild's module actions (quick picker, help, arrow cycling, weapon swap, quests) have no Tears of the
-    Kingdom equivalent in a read-only module and are dropped; pager and card switches become flag actions.
+  - Breath of the Wild's module actions (quick picker, help, arrow cycling, weapon swap, quests) are dropped; pager and
+    card switches become flag actions. The item actions come back as Tears of the Kingdom's own: the Inventory
+    detail's action buttons and a quick picker on the three gear corners (QUICK), drawn in Breath of the Wild's style
+    (its quick picker panel, grid cells and 520 px confirm bar; its Inventory's action bar). Their only module actions
+    are "totk.act" (request the selected item's action) and "totk.select" (the picker's cell). The module offers them
+    only on TotK Native's port; in Eden Duo every action shows disabled, "Item actions need the TotK Native app".
 
 The build fails if a botw. name, a Breath of the Wild romfs path or a module action is left over, or if the page binds
 a totk. name that the module neither publishes (PUBLISHED) nor is listed as not read yet (UNREAD).
@@ -38,7 +42,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, '../..'))
 BOTW_DIR = os.path.join(ROOT, 'packages/BreathOfTheWild/dualscreen')
 OUT = os.path.join(ROOT, 'packages/TearsOfTheKingdom/dualscreen/manifest.json')
-VERSION = '0.2.0'
+VERSION = '0.3.0'
 BUILD_143 = '277178B7DBA1B6D4949A84778D4ABC58B31B34F5000000000000000000000000'   # 1.4.3 main's module ID
 FONT = 'ninP_RodinNTLG-B_DH_003_subset:22'   # TotK's Normal_00 face = BotW's page font (Rodin NTLG B), ~30.4 px/em: cap height 22 px
 M = 'module:totk:'
@@ -176,7 +180,13 @@ PUBLISHED = [
     r'totk\.ready\.champions\.count', r'totk\.ready\.champion_slot\.\d\.(icon|tint|display|display_kind)',
     r'totk\.ready\.heal\.(available|need_text|need_amount_text|empty)',
     r'totk\.ready\.heal\.row\.\d\.(valid|actor|name|count|full|heal_text|has_effect|effect_text|bonus_text)',
+    r'totk\.quick\.(open|title|count|empty)', r'totk\.quick\.sel\.(has|name|facts)',
+    r'totk\.quick\.(\d+|{i})\.(on|icon|equipped|selected|durability_pct|has_life|low|fused|fuse_icon)',
+    r'totk\.(inv|quick)\.act\.(count|\d\.(on|enabled|disabled|label|reason|reason_text))',
+    r'totk\.act\.(state|seq|pending|done|refused|failed|reason|line|ready|ready_reason)',
 ]
+# Module actions the pages may name (the module's on_action)
+MODULE_ACTIONS = {'totk.act', 'totk.select'}
 # Bound by kept widgets, not read yet: these widgets show Breath of the Wild's empty state ('—', '—°', ...)
 UNREAD = {
     'totk.ready.environment.valid': 'temperature (BR dial shows "—°")',
@@ -312,6 +322,11 @@ def ready_page(botw, keep_log):
         out.extend(w if isinstance(w, list) else [w])
         if i == 863:   # after the four-row Champions layout: the five-row Sages layout
             out.extend(five_sage_rows(src))
+    # the gear corners open the quick picker (Breath of the Wild's corner taps), while nothing else is up
+    for value, r in QUICK:
+        out.append({'type': 'rect', 'rect': r, 'color': '#00000000', 'frame': 0, 'on_tap': f'quick_open_{value}',
+                    'need_bind': 'pp_ready_base'})
+    out.extend(quick_picker())
     return {'id': 'ready', 'widgets': out}
 
 
@@ -574,18 +589,101 @@ def inventory_page(botw):
               'max_bind': 'totk.inv.{i}.life_max', 'color': INK, 'bg': '#40FFFCC6', 'frame': 0,
               'need_bind': 'totk.inv.{i}.has_life', **grid})
     w.append(label(620, 470, 'No items in this category', 5, need_bind='totk.inv.empty'))
-    # the selected item
+    # the selected item: its name, facts and caption on the left, its actions on the right (Breath of the Wild's
+    # Inventory action bar: the primary action rightmost), the latest request's line above them
     w += corner_card(16, 868, 1224, 1064)
     sel = {'need_bind': 'totk.inv.sel.has'}
-    w.append(label(40, 884, None, 6, INK, 'left', 1160, 'totk.inv.sel.name', **sel))
-    w.append(label(40, 930, None, 4, '#FFF6DC9D', 'left', 1160, 'totk.inv.sel.facts', **sel))
-    w.append({'type': 'label', 'rect': [40, 968, 1160, 0], 'bind_text': 'totk.inv.sel.caption', 'text_scale': 4,
-              'color': MUTED, 'wrap_width': 1160, 'max_lines': 3, 'align': 'left', **ITALIC, **sel})
+    w.append(label(40, 884, None, 6, INK, 'left', 500, 'totk.inv.sel.name', **sel))
+    w.append(label(40, 930, None, 4, '#FFF6DC9D', 'left', 500, 'totk.inv.sel.facts', **sel))
+    w.append({'type': 'label', 'rect': [40, 968, 500, 0], 'bind_text': 'totk.inv.sel.caption', 'text_scale': 4,
+              'color': MUTED, 'wrap_width': 500, 'max_lines': 3, 'align': 'left', **ITALIC, **sel})
     w.append(label(620, 950, 'Tap an item to see it here', 5, MUTED, need_bind='totk.inv.sel.none'))
+    for k in range(3):
+        w += action_button(1004 - k * 224, 944, 216, f'totk.inv.act.{k}', f'totk_inv_act_{k}')
+    w += result_line(556, 892, 664)
     w += overlay_block(botw)
     scroll = {'id': 'inv_grid', 'rect': [x0, y0, 1208, 732], 'count_bind': 'totk.inv.count', 'row_h': CELL_H,
               'cols': COLS, 'reset_bind': '@flag:inv_tab', 'bar': '#80FFFCC6', 'bar_track': '#20FFFCC6'}
     return {'id': 'inventory', 'widgets': w, 'scrolls': [scroll]}
+
+
+def action_button(x, y, width, p, action):
+    """One item action (the module's <p>.on / .enabled / .disabled / .label / .reason_text): Breath of the Wild's
+    command bar with its verb; a disabled one dimmed, with the reason under the verb. A tap on either asks the module
+    (a disabled one is refused: the refused haptic, and the line says why)."""
+    art = f'file:assets/cmdbar-{width}x112-normal.png'
+    cx = x + width / 2
+    return [
+        image(x, y, x + width, y + 112, art, tint='#FFFFFFFF', need_bind=f'{p}.enabled'),
+        image(x, y, x + width, y + 112, art, tint='#59FFFFFF', need_bind=f'{p}.disabled'),
+        label(cx, y + 35, None, 6, INK, width=width - 28, bind=f'{p}.label', need_bind=f'{p}.enabled'),
+        label(cx, y + 22, None, 5, MUTED, width=width - 28, bind=f'{p}.label', need_bind=f'{p}.disabled'),
+        {'type': 'label', 'rect': [round(cx), y + 62, width - 24, 0], 'bind_text': f'{p}.reason_text', 'text_scale': 3,
+         'color': MUTED, 'align': 'center', 'wrap_width': width - 24, 'max_lines': 2, 'fit_text': True,
+         'text_min_scale': 3, **ITALIC, 'need_bind': f'{p}.disabled'},
+        rect(x, y, x + width, y + 112, '#00000000', on_tap=action, need_bind=f'{p}.on'),
+    ]
+
+
+def result_line(x, y, width):
+    """The latest request: pending in the page's ink, done in teal, refused and failed in red."""
+    out = []
+    for flag, colour in (('pending', INK), ('done', TEAL), ('refused', RED), ('failed', RED)):
+        out.append(label(x, y, None, 4, colour, 'left', width, 'totk.act.line', need_bind=f'totk.act.{flag}'))
+    return out
+
+
+# The quick picker (Breath of the Wild's, for its three gear corners): a tap on the weapon, bow or shield corner opens
+# that pouch over the Ready page; the equipped item is selected, a tap selects another, the confirm bar equips or
+# unequips it. QUICK: (flag value, the corner's tap area) as Breath of the Wild's corner taps (widgets 133, 116, 107).
+QUICK = [(1, [1040, 872, 184, 192]), (2, [1040, 16, 184, 192]), (3, [16, 16, 184, 192])]
+QUICK_CELLS, QUICK_COLS, QUICK_PITCH, QUICK_CELL = 21, 7, 150, 140
+
+
+def quick_picker():
+    gate = {'need_bind': 'ui_quick'}
+    x0, y0 = 620 - (QUICK_COLS * QUICK_PITCH - (QUICK_PITCH - QUICK_CELL)) // 2, 270
+    cell = {'repeat': QUICK_CELLS, 'repeat_bind': 'totk.quick.count', 'repeat_cols': QUICK_COLS,
+            'repeat_dx': QUICK_PITCH, 'repeat_row_dy': QUICK_PITCH}
+    c = QUICK_CELL
+    w = [rect(0, 0, 1240, 1080, '#A5000000', input_block=True, **gate),
+         rect(64, 72, 1176, 1012, '#FF101416', '#46FFFCC6', 1, **gate),
+         rect(64, 72, 70, 1012, TEAL, **gate),
+         label(1152, 96, None, 5, INK, 'right', bind='totk.quick.title', **gate),
+         label(1152, 136, 'Tap an item to inspect', 5, '#A8FFFCC6', 'right', **gate),
+         label(90, 228, 'Pouch', 5, '#A8FFFCC6', 'left', **gate),
+         {'type': 'value', 'rect': [1152, 228, 0, 0], 'bind': 'totk.quick.count', 'text_scale': 5, 'color': WHITE,
+          'align': 'right', 'suffix': ' in the pouch', 'italic': False, 'slant_deg': 0.0,
+          'text_role': 'numeral_readout', **gate},
+         label(620, 420, 'Nothing in this pouch', 5, MUTED, need_bind='totk.quick.empty')]
+    w.append({'type': 'rect', 'rect': [x0, y0, c, c], 'bg': '#C8000000', 'color': '#3CFFFCC6', 'frame': 1,
+              'need_bind': 'totk.quick.{i}.on', **cell})
+    w.append({'type': 'rect', 'rect': [x0 + 2, y0 + 2, c - 4, c - 4], 'bg': '#B400FFC3', 'color': '#00000000',
+              'frame': 0, 'need_bind': 'totk.quick.{i}.equipped', **cell})
+    w.append({'type': 'image', 'rect': [x0 + 15, y0 + 12, c - 30, c - 30], 'src_bind': 'totk.quick.{i}.icon',
+              'need_bind': 'totk.quick.{i}.on', 'src_hold': False, **cell})
+    w.append({'type': 'image', 'rect': [x0 + 6, y0 + 6, 40, 40], 'src_bind': 'totk.quick.{i}.fuse_icon',
+              'need_bind': 'totk.quick.{i}.fused', 'src_hold': False, **cell})
+    w.append({'type': 'bar', 'rect': [x0 + 14, y0 + c - 18, c - 28, 8], 'bind': 'totk.quick.{i}.durability_pct',
+              'max': 100, 'bg': '#40FFFCC6', 'color': INK, 'frame': 0, 'need_bind': 'totk.quick.{i}.has_life', **cell})
+    w.append({'type': 'bar', 'rect': [x0 + 14, y0 + c - 18, c - 28, 8], 'bind': 'totk.quick.{i}.durability_pct',
+              'max': 100, 'bg': '#40FFFCC6', 'color': RED, 'frame': 0, 'need_bind': 'totk.quick.{i}.low', **cell})
+    w.append({'type': 'rect', 'rect': [x0 + 2, y0 + 2, c - 4, c - 4], 'bg': '#30FFFCC6', 'color': '#00000000',
+              'frame': 0, 'need_bind': 'totk.quick.{i}.selected', **cell})
+    w.append({'type': 'rect', 'rect': [x0 + 1, y0 + 1, c - 2, c - 2], 'bg': '#00000000', 'color': TEAL, 'frame': 2,
+              'pulse': True, 'need_bind': 'totk.quick.{i}.selected', **cell})
+    w.append({'type': 'rect', 'rect': [x0, y0, c, c], 'color': '#00000000', 'frame': 0, 'on_tap': 'quick_sel_{i}',
+              'need_bind': 'totk.quick.{i}.on', **cell})
+    sel = {'need_bind': 'totk.quick.sel.has'}
+    w.append(label(90, 730, None, 6, INK, 'left', 1062, 'totk.quick.sel.name', **sel))
+    w.append(label(90, 780, None, 4, '#FFF6DC9D', 'left', 1062, 'totk.quick.sel.facts', **sel))
+    w += result_line(90, 826, 1062)
+    # Breath of the Wild's confirm bar: Back on the left, the item's action on the right
+    w.append(image(88, 880, 608, 992, 'file:assets/cmdbar-520x112-normal.png', tint='#FFFFFFFF', **gate))
+    w.append(label(348, 915, 'Back', 6, INK, width=492, **gate))
+    w.append(rect(88, 880, 608, 992, '#00000000', on_tap='quick_close', **gate))
+    w += action_button(632, 880, 520, 'totk.quick.act.0', 'totk_quick_act_0')
+    return w
 
 
 def map_page(botw):
@@ -641,6 +739,8 @@ def derived_entries(botw, pages):
         {'name': 'rcf_food_on', 'expr': '(@flag:card == 3 && totk.ready.heal.available == 1) ? 1 : 0'},
         {'name': 'rcf_any', 'expr': 'rcf_food_on'},
         {'name': 'states_cover', 'terms': [['totk.state.dim', 1]]},
+        # the quick picker: open while the module shows it (it gives way to the game's menu, events and loading)
+        {'name': 'ui_quick', 'expr': 'totk.quick.open == 1 && totk.state.page == 0'},
     ] + five_sage_derived()
     defined = {x['name'] for x in ours}
     need = set()
@@ -698,6 +798,15 @@ def actions():
         a[f'inv_sel_{i}'] = {'kind': 'flag', 'flag': 'inv_sel', 'value': i}
     for i in range(4):
         a[f'map_layer_{i}'] = {'kind': 'flag', 'flag': 'map_layer', 'value': i}
+    # item actions (the module's "totk.act": source * 8 + button; source 0 the Inventory detail, 1 the quick picker)
+    for k in range(3):
+        a[f'totk_inv_act_{k}'] = {'kind': 'module', 'action': 'totk.act', 'argument': k, 'haptic': 'confirm'}
+    a['totk_quick_act_0'] = {'kind': 'module', 'action': 'totk.act', 'argument': 8, 'haptic': 'confirm'}
+    for value, _ in QUICK:
+        a[f'quick_open_{value}'] = {'kind': 'flag', 'flag': 'quick', 'value': value}
+    a['quick_close'] = {'kind': 'flag', 'flag': 'quick', 'value': 0}
+    for i in range(QUICK_CELLS):
+        a[f'quick_sel_{i}'] = {'kind': 'module', 'action': 'totk.select', 'argument': i}
     return a
 
 
@@ -764,7 +873,8 @@ def check(m):
     collect(m['derived'], visit)
     collect(m['composites'], visit)
     for name, a in m['actions'].items():
-        if a['kind'] not in ('page', 'flag', 'view_reset'):
+        if a['kind'] not in ('page', 'flag', 'view_reset') and not (
+                a['kind'] == 'module' and a.get('action') in MODULE_ACTIONS):
             bad.append(('action', name))
     if bad:
         raise SystemExit(f'left over from Breath of the Wild: {bad[:10]}')
@@ -810,7 +920,7 @@ def manifest(botw, keep_log):
         '_note': f'Version {VERSION}. Generated by tools/totk/gen_manifest.py from the Breath of the Wild package\'s '
                  'Ready, main-menu and Loading pages. All game art and text are decoded at runtime from the player\'s '
                  'own romfs by the native module; the package ships none.',
-        'flags': {'card': 0, 'right_pane': 0, 'inv_tab': 0, 'inv_sel': -1, 'map_layer': 0},
+        'flags': {'card': 0, 'right_pane': 0, 'inv_tab': 0, 'inv_sel': -1, 'map_layer': 0, 'quick': 0},
         'map': {'areas': {'TotkMini': dict(world, clamp_view=False), 'TotkFull': dict(world, clamp_view=True)},
                 'style': {'background': '#FF000D17'}},
         'actions': actions(),

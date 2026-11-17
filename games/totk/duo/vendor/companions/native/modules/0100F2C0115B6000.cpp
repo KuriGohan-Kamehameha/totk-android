@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 P1R4N351
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// The Legend of Zelda: Tears of the Kingdom 1.4.3 (0100F2C0115B6000), read-only.
+// The Legend of Zelda: Tears of the Kingdom 1.4.3 (0100F2C0115B6000). Reads the game; writes and calls nothing.
 //
 // Game state comes from TotK Native's companion reader (totk_reader/, MIT, compiled unchanged):
 // GameData flag tables and the player actor, read through host->read_memory with code guards
@@ -9,8 +9,14 @@
 // snapshot does not report (current stamina, shrines found). The module turns them into page
 // values (totk.*); nothing in the game is written or called. The Ready page is Breath of the
 // Wild's (tools/totk/gen_manifest.py derives it), so its values carry Breath of the Wild's names
-// with totk. in front: botw.ready.shield -> totk.ready.shield, and so on. Item actions are not offered: TotK Native
-// performs them with guest calls, which Eden Duo does not provide on Android.
+// with totk. in front: botw.ready.shield -> totk.ready.shield, and so on.
+//
+// Item actions (equip, eat, take out, ...): the Inventory detail and the Ready page's quick picker show the actions the
+// game's menus offer for the selected item, and a tap requests one. Only TotK Native's embedded port can carry them
+// out: it hands the module a table (totk_native_actions.h) whose rules, state and requests are its runtime's own
+// (runtime/companion_actions.c, which calls the game's pouch functions on its frame-end thread). In Eden Duo there is
+// no table: every action shows disabled, "Item actions need the TotK Native app", and nothing is requested. This
+// module never writes guest memory and never calls guest code, with or without the table.
 //
 // Art and text are decoded from the player's romfs on request (module:totk:<key>, see
 // LoadImage): item icons, layout textures from the Common layout archive, the map tiles, and the
@@ -45,6 +51,7 @@ extern "C" {
 }
 #include "totk_reader/totk_gamedata.h"
 #include "totk_reader/totk_reader_ro.h"
+#include "totk_native_actions.h"
 #include "totk_romfs.h"
 #include "wonder_assets.h"
 #include "wonder_font.h"
@@ -113,6 +120,7 @@ constexpr std::array<const char*, 5> SageIds{"Wind", "Fire", "Water", "Electric"
 
 struct Item {
     std::string actor, fuse, effect;
+    int slot = -1; // in the current pouch partition (the snapshot's "slot")
     int life = INT32_MIN, count = INT32_MIN, fuse_life = INT32_MIN, heal = INT32_MIN;
     int level = INT32_MIN, time = INT32_MIN;
     bool equipped = false;
@@ -128,6 +136,10 @@ struct Model {
     json player = json::object();
     std::array<std::vector<Item>, CatCount> pouch;
     bool have_pouch = false;
+    int partition = -1;               // the pouch partition the items are from
+    long long pouch_gen = 0;          // the action host's generation of that pouch (0: none)
+    bool act_ok = false;              // item actions may run now (the action host's state)
+    std::string act_reason = "notAvailableYet";
     std::array<Sage, 5> sages;
     bool have_sages = false;
     CompanionState common{};          // life, max life (quarter hearts, -1 unknown), from companion_state
@@ -211,6 +223,73 @@ std::optional<int> BymlRootInt(const std::vector<u8>& d, std::string_view key) {
     return std::nullopt;
 }
 
+// ---------- item actions (the words of TotK Native's own companion page) ----------
+
+struct Act {
+    std::string id, reason; // reason: "" when enabled
+    bool enabled = false;
+};
+constexpr std::array<std::array<const char*, 3>, 8> ActionWords{{{"equip", "Equip", "Equipped"},
+                                                                 {"unequip", "Unequip", "Unequipped"},
+                                                                 {"eat", "Eat", "Eaten"},
+                                                                 {"drink", "Drink", "Drunk"},
+                                                                 {"use", "Use", "Used"},
+                                                                 {"hold", "Hold", "Now holding it"},
+                                                                 {"takeOut", "Take out", "Taken out"},
+                                                                 {"fuseArrow", "Fuse to arrows", "Fused to arrows"}}};
+std::string ActionWord(std::string_view id, int which) { // 1: the button, 2: the outcome
+    for (const auto& w : ActionWords)
+        if (id == w[0])
+            return w[which];
+    return Humanize(id);
+}
+// A reason code (per action, of the action state, or of a request's result) in plain words. "notAvailableYet" without
+// the TotK Native port is this module's own: Eden Duo cannot carry item actions out.
+std::string ReasonText(std::string_view code, bool native) {
+    static const std::map<std::string_view, const char*> Texts{
+        {"", "Not possible right now"}, {"unsupported", "Not supported on this game build"},
+        {"title", "Load a save first"}, {"loading", "Wait for loading to finish"},
+        {"noPlayer", "Link isn't in the world right now"}, {"event", "In a cutscene"},
+        {"menu", "Close the game menu first"}, {"saving", "The game is saving"},
+        {"stale", "The game isn't running right now"}, {"notAvailableYet", "Not available from the companion yet"},
+        {"weaponLocked", "Weapons can't be changed right now"}, {"notAiming", "Aim your bow to fuse"},
+        {"aiming", "Not while aiming"}, {"noArrows", "No arrows left"},
+        {"fullHearts", "Your hearts are already full"}, {"notEdible", "This can't be eaten"},
+        {"batteryFull", "Your battery is already full"}, {"noBattery", "You don't have the battery yet"},
+        {"noStock", "None left"}, {"cannotHold", "This can't be held"},
+        {"infoPending", "Reading the item's details"}, {"itemMoved", "The item moved; try again"},
+        {"gameRefused", "The game didn't allow it"}, {"timeout", "No response from the game"},
+        {"noAnswer", "No response from the game"}, {"teardown", "The game closed"},
+        {"busy", "Another action is still running"}, {"notNow", "Not possible right now"},
+        {"invalid", "The request was not valid"}, {"notOffered", "Not possible right now"}};
+    if (code == "notAvailableYet" && !native)
+        return "Item actions need the TotK Native app";
+    const auto it = Texts.find(code);
+    return it != Texts.end() ? it->second : Humanize(code);
+}
+// The actions shown without the TotK Native port: the ones the game's menus would offer for an item of that kind (eat,
+// drink and use of a material depend on facts only the game's info lookup has, so a material shows take out and
+// fuse), all disabled.
+std::vector<Act> OfflineActions(int cat, const Item& it) {
+    std::vector<Act> out;
+    const auto add = [&](const char* id) { out.push_back({id, "notAvailableYet", false}); };
+    switch (cat) {
+    case Weapons: case Bows: case Shields: case Armor:
+        add(it.equipped ? "unequip" : "equip");
+        break;
+    case Food:
+        add("eat");
+        break;
+    case Materials: case Zonai:
+        add("takeOut");
+        add("fuseArrow");
+        break;
+    default:
+        break;
+    }
+    return out;
+}
+
 // ---------- the module ----------
 
 class Module {
@@ -239,7 +318,8 @@ public:
         host = api;
         t_host = &host;
         if (supported && tick % LiveEvery == 0)
-            Read(tick % FullEvery == 0 || !model.have_pouch);
+            Read(tick % FullEvery == 0 || !model.have_pouch || std::exchange(full_soon, false));
+        PollRequest();
         ++tick;
         Publish();
         t_host = nullptr;
@@ -257,7 +337,47 @@ public:
 
     EdenDsmodBool LoadImage(std::string_view key, void* receiver, EdenDsmodImageSink sink);
 
+    // The TotK Native port's action table (totk_native_actions.h); null unbinds. Any thread.
+    void BindNative(const TotkNativeActions* table) {
+        std::scoped_lock lock{act_mutex};
+        if (table && table->version == TOTK_NATIVE_ACTIONS_VERSION && table->struct_size >= sizeof(TotkNativeActions) &&
+            table->item_actions && table->action_state && table->pouch_gen && table->request && table->result)
+            native = *table;
+        else
+            native.reset();
+    }
+    // "totk.act": argument = source * 8 + button (source 0 the Inventory detail, 1 the quick picker); "totk.select":
+    // the quick picker's cell. Runs outside the tick (MODULE_GUIDE); false refuses (the page plays the refused haptic).
+    EdenDsmodBool Action(std::string_view name, s64 argument);
+
 private:
+    enum Source { SrcInventory, SrcQuick, SourceCount };
+    // What a source showed at its last sample: the item and its actions, for on_action (guarded by act_mutex).
+    struct Chosen {
+        bool valid = false;
+        int cat = -1, slot = -1, partition = -1;
+        long long gen = 0;
+        std::string actor, name;
+        std::vector<Act> acts;
+    };
+    // The latest request and its outcome (guarded by act_mutex).
+    struct Request {
+        int seq = 0;
+        std::string action, name, state, reason;
+        bool final = true;
+        std::chrono::steady_clock::time_point at{}, ended{};
+        std::string logged; // the state last logged
+    };
+    std::optional<TotkNativeActions> Native() const {
+        std::scoped_lock lock{act_mutex};
+        return native;
+    }
+    const std::vector<Act>& ActionsFor(Source src, int cat, const Item& it, const std::optional<TotkNativeActions>& n);
+    void PublishActions(const std::string& prefix, Source src, int cat, const Item* it);
+    void PollRequest();
+    void PublishRequest();
+    void PublishQuick(bool shown);
+
     void Read(bool full);
     void Publish();
     void LoadText();
@@ -309,6 +429,24 @@ private:
 
     // an item's maximum durability (the actor pack's MaxLife), -1 when it has none; sample thread only
     std::unordered_map<std::string, int> max_life;
+
+    // item actions
+    mutable std::mutex act_mutex;
+    std::optional<TotkNativeActions> native; // guarded
+    std::array<Chosen, SourceCount> chosen;  // guarded
+    Request request;                         // guarded
+    struct Cached {                          // sample thread: each source's actions, refreshed at the live rate
+        int cat = -1, slot = -1;
+        std::string actor;
+        bool equipped = false;
+        u64 at = 0;
+        std::vector<Act> acts;
+    };
+    std::array<Cached, SourceCount> cached;
+    bool full_soon = false;     // sample thread: an action ended; read the pouch again at the next read
+    int native_logged = -1;     // sample thread: the action route last logged (0 none, 1 TotK Native)
+    int quick_open = 0;         // sample thread: the quick picker's last category (0 closed)
+    std::atomic<s64> quick_tap{-1}; // the quick picker's tapped cell ("totk.select"); -1: the equipped item
 };
 
 // The item's maximum durability: MaxLife in its actor pack's Life/LifeParameters/<actor> file (weapons, bows,
@@ -392,6 +530,14 @@ void Module::Read(bool full) {
         return;
     }
     model.player = root.value("player", json::object());
+    const auto n = Native();
+    if (static_cast<int>(n.has_value()) != native_logged) {   // which route item actions take, once per change
+        native_logged = n.has_value();
+        if (host.log)
+            host.log(host.userdata, EDEN_DSMOD_LOG_INFO,
+                     n ? "TotK item actions: through TotK Native's runtime (its own rules and frame-end calls)"
+                       : "TotK item actions: none in this host; shown disabled (Item actions need the TotK Native app)");
+    }
     // after a "ready" snapshot: the code guard has passed for this main
     totk_gamedata_read(main, GuestRead, full, &model.gamedata);
     if (full) {
@@ -401,8 +547,28 @@ void Module::Read(bool full) {
     const json action = root.value("actionState", json::object());
     model.reason = Str(action, "reason");
     model.pause_menu = action.value("pauseMenu", false);
+    // the action route's own state (TotK Native: its frame-end gate, which also covers saving and the settle after a
+    // menu or a load), asked only while a selection shows actions: asking keeps the frame-end refresh running
+    bool showing = false;
+    {
+        std::scoped_lock lock{act_mutex};
+        for (const auto& c : chosen)
+            showing |= c.valid;
+    }
+    model.act_ok = false;
+    model.act_reason = n ? "stale" : "notAvailableYet";
+    if (n && showing) {
+        s32 ok = 0;
+        const char* why = nullptr;
+        n->action_state(n->userdata, &ok, &why);
+        model.act_ok = ok != 0;
+        model.act_reason = why ? why : "";
+    }
     if (!full)
         return;
+    model.partition = Int(root, "partition", -1);
+    // the generation a request names: the action host's own (its pouch state), read right after the pouch was
+    model.pouch_gen = n ? n->pouch_gen(n->userdata) : Int(root, "pouchGen", 0);
     if (const auto pouch = root.find("pouch"); pouch != root.end() && pouch->is_object()) {
         for (int c = 0; c < CatCount; ++c) {
             auto& list = model.pouch[c];
@@ -413,6 +579,7 @@ void Module::Read(bool full) {
             for (const auto& o : *items) {
                 Item it;
                 it.actor = Str(o, "name");
+                it.slot = Int(o, "slot", -1);
                 it.fuse = Str(o, "fuse");
                 it.life = Int(o, "life");
                 it.count = Int(o, "count");
@@ -482,11 +649,17 @@ void Module::Publish() {
     I64("totk.state.life", status == 5 && model.common.life >= 0 ? model.common.life : -1);
     I64("totk.state.max_life", status == 5 && model.common.max_life >= 0 ? model.common.max_life : -1);
     PublishFx();
-    if (status != 5)
+    PublishRequest();
+    if (status != 5) {
+        std::scoped_lock lock{act_mutex};
+        for (auto& c : chosen)
+            c.valid = false;
         return;
+    }
     PublishReady();
     PublishMap();
     PublishInventory();
+    PublishQuick(!event && !menu && !loading); // the picker gives way to the game's menu, an event and loading
 }
 
 // The loading page's twelve-dot spinner: Breath of the Wild's native loop shape (dots 0.5 -> 1 -> 0.5 every 20 UI
@@ -836,6 +1009,227 @@ void Module::PublishInventory() {
             facts += (facts.empty() ? "" : "   ") + std::string{"Equipped"};
         Text("totk.inv.sel.facts", facts);
     }
+    PublishActions("totk.inv.act", SrcInventory, has_sel ? rows[static_cast<size_t>(sel)].first : -1,
+                   has_sel ? rows[static_cast<size_t>(sel)].second : nullptr);
+}
+
+// The Ready page's quick picker (Breath of the Wild's, for the three gear corners): flag quick 1 weapons, 2 bows,
+// 3 shields, 0 closed. The equipped item is selected until a cell is tapped; its action (equip / unequip) is the
+// picker's confirm button.
+void Module::PublishQuick(bool shown) {
+    const int q = shown ? static_cast<int>(std::clamp<s64>(Get("@flag:quick", 0), 0, 3)) : 0;
+    if (q != quick_open) { // opened, closed or switched: the equipped item is selected again
+        quick_open = q;
+        quick_tap = -1;
+    }
+    I64("totk.quick.open", q > 0);
+    const int cat = q - 1; // Weapons, Bows, Shields
+    std::vector<const Item*> items;
+    if (q > 0)
+        for (const auto& it : model.pouch[cat])
+            if (!it.actor.empty() && items.size() < 21)
+                items.push_back(&it);
+    static constexpr const char* Titles[] = {"", "Weapons", "Bows", "Shields"};
+    Text("totk.quick.title", Titles[q]);
+    I64("totk.quick.count", static_cast<s64>(items.size()));
+    I64("totk.quick.empty", q > 0 && items.empty());
+    s64 sel = quick_tap.load();
+    if (sel < 0 || sel >= static_cast<s64>(items.size()))
+        for (size_t i = 0; i < items.size() && sel < 0; ++i)
+            if (items[i]->equipped)
+                sel = static_cast<s64>(i);
+    if (sel >= static_cast<s64>(items.size()))
+        sel = -1;
+    for (size_t i = 0; i < items.size(); ++i) {
+        const Item& it = *items[i];
+        const std::string p = "totk.quick." + std::to_string(i);
+        I64(p + ".on", 1);
+        Text(p + ".icon", std::string{Prefix} + "icon/" + it.actor);
+        I64(p + ".equipped", it.equipped);
+        I64(p + ".selected", static_cast<s64>(i) == sel);
+        const int max = it.life != INT32_MIN ? MaxLife(it.actor) : -1;
+        const int pct = max > 0 ? std::clamp(static_cast<int>(std::lround(100.0 * std::max(0, it.life) / max)), 0, 100) : -1;
+        I64(p + ".durability_pct", pct);
+        I64(p + ".has_life", pct >= 0);
+        I64(p + ".low", pct >= 0 && pct <= 20);
+        I64(p + ".fused", !it.fuse.empty());
+        if (!it.fuse.empty())
+            Text(p + ".fuse_icon", std::string{Prefix} + "icon/" + it.fuse);
+    }
+    const Item* picked = sel >= 0 ? items[static_cast<size_t>(sel)] : nullptr;
+    I64("totk.quick.sel.has", picked != nullptr);
+    if (picked) {
+        Text("totk.quick.sel.name", ItemName(picked->actor));
+        std::string facts;
+        if (picked->life != INT32_MIN) {
+            const int max = MaxLife(picked->actor);
+            facts = max > 0 ? "Durability " + std::to_string(std::clamp(static_cast<int>(std::lround(100.0 * std::max(0, picked->life) / max)), 0, 100)) + "%"
+                            : "Durability " + std::to_string(picked->life);
+        }
+        if (!picked->fuse.empty())
+            facts += (facts.empty() ? "" : "   ") + std::string{"Fused: "} + ItemName(picked->fuse);
+        if (picked->equipped)
+            facts += (facts.empty() ? "" : "   ") + std::string{"Equipped"};
+        Text("totk.quick.sel.facts", facts);
+    }
+    PublishActions("totk.quick.act", SrcQuick, cat, picked);
+}
+
+// One source's actions for its selected item (it null: none): refreshed at the live rate, or at once for another item.
+const std::vector<Act>& Module::ActionsFor(Source src, int cat, const Item& it, const std::optional<TotkNativeActions>& n) {
+    Cached& c = cached[src];
+    if (c.cat == cat && c.slot == it.slot && c.actor == it.actor && c.equipped == it.equipped && tick - c.at < LiveEvery)
+        return c.acts;
+    c = {cat, it.slot, it.actor, it.equipped, tick, {}};
+    if (!n) {
+        c.acts = OfflineActions(cat, it);
+        return c.acts;
+    }
+    if (it.slot < 0)
+        return c.acts;
+    TotkNativeAction out[3]{};
+    const u32 count = std::min<u32>(n->item_actions(n->userdata, cat, it.slot, out), 3);
+    for (u32 k = 0; k < count; ++k)
+        c.acts.push_back({out[k].id ? out[k].id : "", out[k].reason ? out[k].reason : "", out[k].enabled != 0});
+    return c.acts;
+}
+
+// <prefix>.count, and per button k (0..2) <prefix>.k.on / .enabled / .disabled / .label / .reason_text / .reason.
+void Module::PublishActions(const std::string& prefix, Source src, int cat, const Item* it) {
+    const auto n = Native();
+    static const std::vector<Act> None;
+    const std::vector<Act>& acts = it ? ActionsFor(src, cat, *it, n) : None;
+    if (!it)
+        cached[src] = {};
+    I64(prefix + ".count", static_cast<s64>(acts.size()));
+    for (size_t k = 0; k < 3; ++k) {
+        const std::string p = prefix + "." + std::to_string(k);
+        const Act* a = k < acts.size() ? &acts[k] : nullptr;
+        I64(p + ".on", a != nullptr);
+        I64(p + ".enabled", a && a->enabled);
+        I64(p + ".disabled", a && !a->enabled);
+        if (!a)
+            continue;
+        Text(p + ".label", ActionWord(a->id, 1));
+        Text(p + ".reason", a->reason);
+        Text(p + ".reason_text", a->enabled ? std::string{} : ReasonText(a->reason, n.has_value()));
+    }
+    std::scoped_lock lock{act_mutex};
+    Chosen& c = chosen[src];
+    c.valid = it != nullptr && !acts.empty();
+    if (!c.valid)
+        return;
+    c.cat = cat;
+    c.slot = it->slot;
+    c.partition = model.partition;
+    c.gen = model.pouch_gen;
+    c.actor = it->actor;
+    c.name = ItemName(it->actor);
+    c.acts = acts;
+}
+
+EdenDsmodBool Module::Action(std::string_view name, s64 argument) {
+    if (name == "totk.select") {
+        if (argument < 0 || argument > 20)
+            return EDEN_DSMOD_FALSE;
+        quick_tap = argument;
+        return EDEN_DSMOD_TRUE;
+    }
+    if (name != "totk.act" || argument < 0 || argument >= 8 * SourceCount)
+        return EDEN_DSMOD_FALSE;
+    const auto src = static_cast<size_t>(argument / 8), k = static_cast<size_t>(argument % 8);
+    std::scoped_lock lock{act_mutex};
+    const Chosen& c = chosen[src];
+    if (!c.valid || k >= c.acts.size())
+        return EDEN_DSMOD_FALSE;
+    const Act& a = c.acts[k];
+    const auto refuse = [&](const std::string& reason) {
+        request = {0, a.id, c.name, "refused", reason, true, std::chrono::steady_clock::now(),
+                   std::chrono::steady_clock::now(), {}};
+        return EDEN_DSMOD_FALSE;
+    };
+    if (!native)
+        return refuse("notAvailableYet");   // Eden Duo: nothing is ever requested
+    if (!request.final)
+        return EDEN_DSMOD_FALSE;            // one at a time: a tap while one runs is dropped, as in TotK Native
+    if (!a.enabled)
+        return refuse(a.reason);
+    if (c.gen <= 0 || c.partition < 0)
+        return refuse("itemMoved");
+    const s32 seq = native->request(native->userdata, a.id.c_str(), CatKeys[static_cast<size_t>(c.cat)], c.slot,
+                                    c.actor.c_str(), c.partition, c.gen);
+    if (seq <= 0)
+        return refuse(seq == -1 ? "busy" : seq == -2 ? "notNow" : seq == -3 ? "unsupported" : "invalid");
+    request = {seq, a.id, c.name, "pending", "", false, std::chrono::steady_clock::now(), {}, {}};
+    return EDEN_DSMOD_TRUE;
+}
+
+// Sample thread: the pending request's outcome, from the action host (which ends it itself when the game's frame end
+// stops: "stale", "timeout").
+void Module::PollRequest() {
+    std::string line;
+    {
+        std::scoped_lock lock{act_mutex};
+        if (!request.final && request.seq > 0 && native) {
+            char buf[256];
+            const size_t len = native->result(native->userdata, request.seq, buf, sizeof buf);
+            const json r = len > 0 && len < sizeof buf ? json::parse(std::string_view{buf, len}, nullptr, false) : json{};
+            const std::string state = r.is_object() ? Str(r, "state") : std::string{};
+            const auto now = std::chrono::steady_clock::now();
+            if (!state.empty() && state != "pending") {
+                request.state = state == "done" || state == "refused" ? state : "failed";
+                request.reason = Str(r, "reason");
+                if (request.state == "failed" && state != "failed" && request.reason.empty())
+                    request.reason = state;
+                request.final = true;
+                request.ended = now;
+                full_soon = true; // the pouch changed (or may have): read it again now
+            } else if (state.empty() && now - request.at > std::chrono::seconds{8}) {
+                request.state = "failed";
+                request.reason = "noAnswer";
+                request.final = true;
+                request.ended = now;
+            }
+        }
+        if (request.logged != request.state && !request.action.empty()) {
+            request.logged = request.state;
+            line = "TotK item action " + std::to_string(request.seq) + " " + request.action + " " + request.name + ": " +
+                   request.state + (request.reason.empty() ? "" : " " + request.reason);
+        }
+    }
+    if (!line.empty() && host.log)
+        host.log(host.userdata, EDEN_DSMOD_LOG_INFO, line.c_str());
+}
+
+// totk.act.*: the latest request's line, shown while it runs and for five seconds after it ends.
+void Module::PublishRequest() {
+    Request r;
+    {
+        std::scoped_lock lock{act_mutex};
+        r = request;
+    }
+    const bool shown = !r.action.empty() && (!r.final || std::chrono::steady_clock::now() - r.ended < std::chrono::seconds{5});
+    const int state = !shown ? 0 : r.state == "pending" ? 1 : r.state == "done" ? 2 : r.state == "refused" ? 3 : 4;
+    I64("totk.act.state", state);
+    I64("totk.act.seq", shown ? r.seq : 0);
+    I64("totk.act.pending", state == 1);
+    I64("totk.act.done", state == 2);
+    I64("totk.act.refused", state == 3);
+    I64("totk.act.failed", state == 4);
+    Text("totk.act.reason", shown ? r.reason : std::string{});
+    const bool with_native = Native().has_value();
+    std::string line;
+    if (state == 1)
+        line = ActionWord(r.action, 1) + ": " + r.name + "\xE2\x80\xA6";
+    else if (state == 2)
+        line = ActionWord(r.action, 2) + ": " + r.name;
+    else if (state == 3)
+        line = "Not done: " + ReasonText(r.reason, with_native);
+    else if (state == 4)
+        line = "Failed: " + ReasonText(r.reason, with_native);
+    Text("totk.act.line", line);
+    I64("totk.act.ready", model.act_ok);
+    Text("totk.act.ready_reason", model.act_reason);
 }
 
 // ---------- images ----------
@@ -1048,8 +1442,13 @@ void ConfigureCallback(void* p, const EdenDsmodHostExtensions* ext) {
     } catch (...) {
     }
 }
-EdenDsmodBool ActionCallback(void*, const char*, std::int64_t) {
-    return EDEN_DSMOD_FALSE; // read-only: no module actions
+EdenDsmodBool ActionCallback(void* p, const char* name, std::int64_t argument) {
+    try {
+        if (p && name)
+            return static_cast<Module*>(p)->Action(name, argument);
+    } catch (...) {
+    }
+    return EDEN_DSMOD_FALSE;
 }
 EdenDsmodBool LoadImageCallback(void* p, const EdenDsmodHostApi*, const char* key, void* receiver,
                                 EdenDsmodImageSink sink) {
@@ -1088,6 +1487,16 @@ const EdenDsmodModuleExtensions ModuleExtensions{EDEN_DSMOD_EXT_VERSION, sizeof(
 const EdenDsmodFontExtensions FontExtensions{EDEN_DSMOD_FONT_EXT_VERSION, sizeof(EdenDsmodFontExtensions),
                                              EDEN_DSMOD_FONT_EXT_HASH, &DecodeFontCallback};
 } // namespace
+
+// The TotK Native port's action table (totk_native_actions.h). Not exported from Eden's build of this module: only the
+// port, which links the module in, calls it.
+extern "C" void totk_native_port_bind_actions(void* instance, const TotkNativeActions* actions) {
+    try {
+        if (instance)
+            static_cast<Module*>(instance)->BindNative(actions);
+    } catch (...) {
+    }
+}
 
 DSMOD_SDK_EXPORT_MODULE(ModuleApi)
 DSMOD_SDK_EXPORT_EXTENSIONS(ModuleExtensions)

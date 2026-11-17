@@ -10,6 +10,11 @@ run directly on its processor, and its graphics are drawn by a bundled Vulkan dr
 files**: you point it at your own dump of the game, and it builds everything it needs on the device. Then a
 controller-friendly menu lets you pick graphics presets, controls and saves before you play.
 
+> **This fork** (branch `common`) builds two apps from one code base: *TotK Native (fork)* and the experimental
+> *BotW Native* (Breath of the Wild 1.6.0, [BOTW.md](games/totk/android/BOTW.md)). What differs between them is listed
+> in `games/games.toml`; how the branches relate and how each app is built and released is in
+> [MAINTENANCE.md](MAINTENANCE.md). This README describes the Tears of the Kingdom app.
+
 <p align="center">
   <img src="docs/images/home.webp" width="49%" alt="Home menu">
   <img src="docs/images/graphics-performance.webp" width="49%" alt="Graphics: Performance tab with presets">
@@ -400,7 +405,7 @@ Updating keeps your saves and game data; **do not uninstall** to update.
 
 ## Saves and storage
 
-- **Mods**: *Game data → Mods* imports a [TKMM](https://github.com/TKMM-Team/Tkmm) merge or a mod's folder or zip into
+- **Mods**: *Game data → Mods* imports a [TKMM](https://github.com/TKMM-Team/Tkmm) merge (BotW Native: a BCML merge) or a mod's folder or zip into
   the app's private storage. RomFS files and IPS patches of `main` are used; code modules (`subsdk`) are not loaded.
   See [docs/mods.md](docs/mods.md).
 - **Saves** always stay in the app's private storage, wherever the game data is. *Saves* exports them to a zip and

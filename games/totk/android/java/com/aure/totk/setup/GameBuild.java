@@ -30,7 +30,7 @@ public final class GameBuild {
     /** The PC mod manager whose merge the Mods import takes. */
     public static final String MOD_MANAGER = "TKMM";
     /** Second screen: "map" (CompanionView) or "duo" (DuoSurfaceView, libduo_host.so). */
-    public static final String COMPANION = "map";
+    public static final String COMPANION = "duo";
     /** Whether the game starts without its tablet (the stick LEDs then have a look for that). */
     public static final boolean TABLET_CAN_BE_MISSING = false;
     /** BifrostLooks row name: "TOTK" or "BOTW". */

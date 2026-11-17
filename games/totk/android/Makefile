@@ -29,8 +29,8 @@ ifneq ($(DEV_BUILD),0)
   endif
 endif
 DEV_BUILD_STAMP := $(OUT)/.dev-build
-# Parallel compiles of libduo_host.so (APP=1 for a game with gpl_companion = true: VERSION=botw160): its translation units are large (the companion's manifest
-# parser, the BotW module), about 1 GB of compiler each at the peak.
+# Parallel compiles of libduo_host.so (APP=1 for a game with gpl_companion = true: VERSION=botw160 and v143): its translation units are large (the
+# companion's manifest parser, the title module), about 1 GB of compiler each at the peak.
 DUO_JOBS ?= 4
 # GPU backend: vk (android/gfx/nvn_vk.c, Vulkan) or null (android/gfx/nvn_null.c, no GPU)
 GPU ?= vk
@@ -80,9 +80,10 @@ endif
 
 # The games both apps are built for (games/games.toml, tools/games.py): their defines (c_defines and the env_defaults as
 # GAME_DEFAULT_*), their own runtime sources (game_patches) and whether the APK carries the GPL Eden Duo companion
-# (gpl_companion). Breath of the Wild 1.6.0 (botw160): the shared runtime and graphics layer compiled with GAME_BOTW;
-# game_patches_botw.c replaces game_patches.c, the nn::settings service its SDK asks for is linked in, and duo_port.c is
-# the runtime's side of the second-screen companion (duo/, libduo_host.so below; a C table and a dlopen).
+# (gpl_companion) with its module and package (duo). Breath of the Wild 1.6.0 (botw160): the shared runtime and graphics
+# layer compiled with GAME_BOTW; game_patches_botw.c replaces game_patches.c and the nn::settings service its SDK asks
+# for is linked in. duo_port.c, common to both, is the runtime's side of the second-screen companion (duo/,
+# libduo_host.so below; a C table and a dlopen): without the library it logs that the companion is off.
 GAMES_PY := $(PYTHON) $(TOTK)/../../tools/games.py
 GAME_TAGS := $(shell $(GAMES_PY) list | cut -d' ' -f2)
 ifeq ($(VERSION),v0)
@@ -92,6 +93,8 @@ else ifneq ($(filter $(VERSION),$(GAME_TAGS)),)
   VDEF := $(shell $(GAMES_PY) cflags $(VERSION))
   PATCHES := $(shell $(GAMES_PY) patches $(VERSION))
   GPL_COMPANION := $(shell $(GAMES_PY) get $(VERSION) gpl_companion)
+  DUO_TITLE := $(shell $(GAMES_PY) get $(VERSION) title_id)
+  DUO_MODULE := $(shell $(GAMES_PY) get $(VERSION) duo.module)
   ifeq ($(strip $(VDEF)),)
     $(error tools/games.py gave no defines for VERSION=$(VERSION))
   endif
@@ -100,7 +103,7 @@ else
   PATCHES := runtime/game_patches.c
 endif
 
-RUNTIME_C := runtime/loader.c runtime/game_data.c $(PATCHES) runtime/world_survey.c runtime/game_slot.c runtime/services.c runtime/romfs.c \
+RUNTIME_C := runtime/loader.c runtime/game_data.c $(PATCHES) runtime/world_survey.c runtime/game_slot.c runtime/services.c runtime/romfs.c runtime/duo_port.c \
   runtime/threads.c runtime/frame_timeline.c runtime/frame_fence.c runtime/hle_stack.c runtime/gfx_bridge.c runtime/account.c runtime/input.c runtime/hid_feedback.c \
   runtime/motion_fusion.c runtime/autoload.c runtime/gfx_probe.c runtime/memory_probe.c runtime/shared_font.c runtime/ipc.c \
   runtime/audio_renderer.c runtime/audio_mixer.c runtime/audio_reverb.c runtime/audio_effects.c runtime/fs_host.c \
@@ -226,16 +229,18 @@ $(OUT)/libtotk_lsfg.so: $(LSFG_INPUTS)
 	cmake --build $(OUT)/lsfg-build -j4 --target totk_lsfg
 endif
 
-# The Eden Duo companion host for the Breath of the Wild app (duo/CMakeLists.txt): Eden Duo's runtime and its BotW module,
-# C++23 and GPL-3.0-or-later, in a library of its own that the runtime opens with dlopen (runtime/duo_port.c). libtotk.so
-# links none of it and starts without it.
+# The Eden Duo companion host for the apps of games with gpl_companion (duo/CMakeLists.txt): Eden Duo's runtime and the
+# game's title module (DUO_TITLE = its title_id, DUO_MODULE = its duo.module), C++23 / C11 and GPL-3.0-or-later, in a
+# library of its own that the runtime opens with dlopen (runtime/duo_port.c). libtotk.so links none of it and starts
+# without it.
 ifeq ($(TARGET)-$(APP)-$(GPL_COMPANION),android-1-true)
 DUO := $(TOTK)/duo
 DUO_INPUTS := $(shell find $(DUO) -type f -not -path '*/packages/*' -not -name '*.md')
 all: $(OUT)/libduo_host.so
 $(OUT)/libduo_host.so: $(DUO_INPUTS) $(TOTK)/runtime/companion_state.h
 	cmake -S $(DUO) -B $(OUT)/duo-build -DCMAKE_TOOLCHAIN_FILE=$(NDK)/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-$(API) -DANDROID_STL=c++_shared -DCMAKE_BUILD_TYPE=Release -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$(OUT) \
-	  "-DCMAKE_CXX_FLAGS=$(strip $(PREFIX_MAP)) -g"
+	  -DDUO_TITLE=$(DUO_TITLE) -DDUO_MODULE=$(DUO_MODULE) \
+	  "-DCMAKE_C_FLAGS=$(strip $(PREFIX_MAP)) -g" "-DCMAKE_CXX_FLAGS=$(strip $(PREFIX_MAP)) -g"
 	cmake --build $(OUT)/duo-build -j$(DUO_JOBS) --target duo_host
 endif
 

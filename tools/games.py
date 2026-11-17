@@ -2,7 +2,8 @@
 """The per-game variables (games/games.toml): load, check and hand them to the build.
 
     python3 tools/games.py list                         the games, one per line (id and version tag)
-    python3 tools/games.py get <game> <var>             one variable's value (JSON for tables and lists)
+    python3 tools/games.py get <game> <var>[.<key>...]  one variable's value (JSON for tables and lists), or one key of a
+                                                        table variable (get v143 duo.package)
     python3 tools/games.py cflags <game>                compiler defines for make (c_defines + GAME_DEFAULT_*)
     python3 tools/games.py patches <game>               the game's own runtime sources (Makefile PATCHES)
     python3 tools/games.py flavour <game> <flavour> <field>   a flavour's package / label / key / ... (paths resolved)
@@ -267,7 +268,12 @@ def main(argv):
         for g in data['games']:
             print(g, data['var']['nso_version'][g])
     elif cmd == 'get':
-        x = values(args[0], data)[args[1]]
+        name, *keys = args[1].split('.')
+        x = values(args[0], data)[name]
+        for key in keys:
+            if not isinstance(x, dict) or key not in x:
+                raise GameError(f'{args[1]}: {name} has no key {key!r}')
+            x = x[key]
         print(x if isinstance(x, (str, int)) and not isinstance(x, bool) else json.dumps(x))
     elif cmd == 'cflags':
         print(' '.join(cflags(args[0], data)))

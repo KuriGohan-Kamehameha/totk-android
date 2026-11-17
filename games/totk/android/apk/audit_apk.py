@@ -6,9 +6,9 @@ key material. build_release.py runs it on every APK it makes and stops on any fi
 
     audit_apk.py [--game botw] <apk> [<apk> ...]   exit 1 and one line per finding when something is wrong
 
---game <game> (build_release.py passes its own): a game whose gpl_companion is true in games/games.toml (botw, botw160)
-also may carry the Eden Duo companion host and its package; the default audits a Tears of the Kingdom APK, where they are
-findings.
+--game <game> (build_release.py passes its own; default totk): a game whose gpl_companion is true in games/games.toml
+(today both) may carry the Eden Duo companion host and its own package (games.toml duo.package), byte for byte the
+vendored one; another game's package, or any of it in a game without gpl_companion, is a finding.
 """
 import re, sys, zipfile
 from pathlib import Path
@@ -40,17 +40,28 @@ ALLOWED = [re.compile(p) for p in (
     r'assets/build\.txt',         # the source commit shown in About (build_release.stage_assets)
     r'assets/licenses/[A-Za-z0-9][A-Za-z0-9_.+-]*\.txt',
 )]
-# Games with gpl_companion = true only (games/games.toml: Breath of the Wild; audit(game='botw'), audit_apk.py --game botw): the Eden Duo companion host and its
-# package, both vendored in games/totk/duo/vendor (GPL-3.0-or-later; assets/licenses/Eden-Duo.txt). The package is pages
-# and code-drawn images, no game art, and every entry must be byte for byte the vendored file.
+# Games with gpl_companion = true only (games/games.toml; audit(game=...), audit_apk.py --game ...): the Eden Duo companion
+# host and the game's own package (games.toml duo.package), both vendored in games/totk/duo/vendor (GPL-3.0-or-later;
+# assets/licenses/Eden-Duo.txt). The package is pages, code-drawn images and plain-text lists (Tears of the Kingdom: the
+# map tiles and the font the module reads from the player's files), no game art, and every entry must be byte for byte
+# the vendored file.
 DUO_LIB = 'libduo_host.so'
-DUO_PACKAGE = Path(__file__).resolve().parents[2] / 'duo/vendor/companions/packages/BreathOfTheWild/dualscreen'
-DUO_ASSETS = 'assets/duo/BreathOfTheWild/dualscreen/'
-ALLOWED_BOTW = [re.compile(p) for p in (
-    r'lib/arm64-v8a/' + re.escape(DUO_LIB),
-    re.escape(DUO_ASSETS) + r'(manifest|ASSETS\.provenance|[0-9A-F]{16})\.json',
-    re.escape(DUO_ASSETS) + r'assets/[A-Za-z0-9][A-Za-z0-9_.-]*\.png',
-)]
+DUO_PACKAGES = Path(__file__).resolve().parents[2] / 'duo/vendor/companions/packages'
+
+
+def duo_package(game):
+    """(vendored dualscreen folder, its prefix in the APK) of a game's Eden Duo package."""
+    name = games.values(game)['duo']['package']
+    return DUO_PACKAGES / name / 'dualscreen', f'assets/duo/{name}/dualscreen/'
+
+
+def allowed_duo(prefix):
+    return [re.compile(p) for p in (
+        r'lib/arm64-v8a/' + re.escape(DUO_LIB),
+        re.escape(prefix) + r'(manifest|ASSETS\.provenance|[0-9A-F]{16})\.json',
+        re.escape(prefix) + r'[A-Za-z0-9][A-Za-z0-9_]*\.txt',
+        re.escape(prefix) + r'assets/[A-Za-z0-9][A-Za-z0-9_.-]*\.png',
+    )]
 # Names and extensions of the game's own files and of what the build or the device setup derives from them.
 DENIED_SUFFIXES = ('.bntx', '.bfttf', '.bfotf', '.zs', '.sarc', '.pack', '.msbt', '.msbp', '.bfres', '.byml', '.bgyml',
                    '.spv', '.vk', '.vv', '.vkpack', '.nso', '.nca', '.nsp', '.xci', '.nsz', '.npdm', '.keys', '.jpg', '.dat',
@@ -71,10 +82,11 @@ HOST_PATH = re.compile(rb'/(home|Users)/[A-Za-z0-9_.-]+/')
 
 def audit(apk, game='totk'):
     """Findings for one APK (empty when it passes). game: the build it claims to be (id or version tag); only a game with
-    gpl_companion may carry the Eden Duo companion (ALLOWED_BOTW)."""
+    gpl_companion may carry the Eden Duo companion, with its own package (allowed_duo)."""
     import hashlib
     problems = []
-    allowed = ALLOWED + (ALLOWED_BOTW if games.values(game)['gpl_companion'] else [])
+    duo_source, duo_assets = duo_package(game)
+    allowed = ALLOWED + (allowed_duo(duo_assets) if games.values(game)['gpl_companion'] else [])
     with zipfile.ZipFile(apk) as z:
         names = z.namelist()
         if len(set(names)) != len(names):
@@ -106,8 +118,8 @@ def audit(apk, game='totk'):
                 problems.append(f'{name}: starts like a game file ({data[:8]!r})')
             if name == 'assets/shader_list.tsv' and SHADER_LIST.is_file() and data != SHADER_LIST.read_bytes():
                 problems.append(f'{name}: differs from the committed games/totk/assets/shader_list.tsv')
-            if name.startswith(DUO_ASSETS):
-                source = DUO_PACKAGE / name[len(DUO_ASSETS):]
+            if name.startswith(duo_assets):
+                source = duo_source / name[len(duo_assets):]
                 if not source.is_file() or source.read_bytes() != data:
                     problems.append(f'{name}: differs from the vendored companion package ({source})')
             if name == 'assets/build.txt' and not re.fullmatch(rb'commit [0-9a-f]{7,40}(-dirty)?\n', data):

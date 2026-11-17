@@ -37,9 +37,7 @@ static uint64_t romfs_image_size;static const char *romfs_image_sha256,*romfs_in
 #define ROMFS_IMAGE_SIZE romfs_image_size
 #define ROMFS_IMAGE_SHA256 romfs_image_sha256
 #define ROMFS_INDEX_SHA256 romfs_index_sha256
-#ifdef GAME_BOTW
 static int rel_ready;   /* runtime_fs_init has finished: runtime_romfs_read_rel may read (set once, read by other threads) */
-#endif
 static uint8_t *index_bytes;
 static size_t index_size;
 static uint64_t file_count,strings_offset;
@@ -420,11 +418,8 @@ void runtime_fs_init(void) {
  runtime_boot_status(TOTK_UI("准备游戏资源","Preparing game data"),TOTK_UI("检查分辨率补丁并挂载只读游戏资源","Checking the resolution patch and mounting the read-only game data"));
  overlay_init(dir);
  fprintf(stderr,"[totk] native read-only RomFS ready: %llu files\n",(unsigned long long)file_count);
-#ifdef GAME_BOTW
  __atomic_store_n(&rel_ready,1,__ATOMIC_RELEASE);
-#endif
 }
-#ifdef GAME_BOTW
 /* The companion host's reader (duo/duo_port.h romfs_read; runtime/duo_port.c): a file by its path below the root,
    with no mount name and no handle. It runs on the companion's own threads while the game reads through its handles,
    so it takes nothing from the handle table (a full table stops the game) and no failure here is fatal: -1 is "no such
@@ -445,7 +440,6 @@ int64_t runtime_romfs_read_rel(const char *rel,uint64_t offset,void *out,uint64_
  if(own>=0)close(own);
  return (int64_t)done;
 }
-#endif
 static int path_ok(const char *p) {return romfs_path_valid_relative(p);}
 static const char *rom_path(const char *path) {
  return romfs_path_relative(mount_name,path);

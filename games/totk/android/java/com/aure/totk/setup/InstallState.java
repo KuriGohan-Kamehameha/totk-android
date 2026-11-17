@@ -122,7 +122,7 @@ final class InstallState {
         long need = STAGING_BYTES;
         if (!done("romfs")) need += ROMFS_SIZE - Math.max(0, Math.min(ROMFS_SIZE, new File(game, "extracted/" + GameBuild.VERSION + "/romfs/romfs.bin").length()));
         if (!done("code") || !done("index") || !done("fonts")) need += CODE_BYTES;
-        if (!done("companion")) need += COMPANION_BYTES;
+        if (ArtPolicy.used(GameBuild.COMPANION) && !done("companion")) need += COMPANION_BYTES;
         if (!done("shaders")) need += SHADER_BYTES;
         return Math.max(0, need - size(new File(game, ".import")));
     }

@@ -761,11 +761,16 @@ public final class SetupActivity extends Activity implements SetupService.Listen
             }
         });
     }
+    /** A built-in second screen whose page draws from the setup's art (ArtPolicy.used): only then is the art offered
+     *  before play, updated on its own or counted as missing. The Eden Duo page reads the game's files itself. */
+    private boolean artScreen() {
+        return ArtPolicy.used(GameBuild.COMPANION) && SettingsStore.secondaryDisplay(this);
+    }
     /** Second-screen art from an older generator (an app update changed item names or icons; InstallState.artOutdated) is
      * made again on its own when Home opens, once per launch: the companion stage is optional, so Play now on the install
      * screen stops it and starts the game with the current art, and a failed update stays on Game data's Update row. */
     private void updateOutdatedArt(InstallState install) {
-        if (artUpdateStarted || !install.playable() || !ArtPolicy.updateAutomatically(SettingsStore.secondaryDisplay(this), install.artState())
+        if (artUpdateStarted || !install.playable() || !ArtPolicy.updateAutomatically(artScreen(), install.artState())
                 || !install.errorCode(InstallState.OPTIONAL).isEmpty()
                 || !InstallState.libraryAvailable() || SetupService.status.running || SetupService.jobActive(this)
                 || !StorageLocation.available(this) || StorageLocation.migrationPending(this, true) || !InstallState.gameState(this).free()) return;
@@ -786,7 +791,7 @@ public final class SetupActivity extends Activity implements SetupService.Listen
             replace(Screen.HOME);
             return;
         }
-        if (ArtPolicy.offerBeforePlay(SettingsStore.secondaryDisplay(this), InstallState.read(this).artState(),
+        if (ArtPolicy.offerBeforePlay(artScreen(), InstallState.read(this).artState(),
                 Inputs.prefs(this).getBoolean(ArtPolicy.DECLINED, false))) {
             if (!ui) showUi();
             openChoice("data", Strings.COMPANION_ROW, Strings.ART_OFFER_TITLE, Strings.ART_OFFER_BODY,
@@ -1116,7 +1121,7 @@ public final class SetupActivity extends Activity implements SetupService.Listen
             chips.add(new Widgets.Chip(this).set(Widgets.Chip.OK, Strings.INSTALLED_CHIP));
             chips.add(!noSeed ? new Widgets.Chip(this).set(Widgets.Chip.OK, Strings.shadersReady(install.shaderVariants()))
                     : new Widgets.Chip(this).set(Widgets.Chip.WARN, Strings.SHADERS_NONE));
-            if (install.done("companion") && SettingsStore.secondaryDisplay(this))
+            if (install.done("companion") && artScreen())
                 chips.add(new Widgets.Chip(this).set(Widgets.Chip.OK, Strings.SECOND_READY));
         }
         if (pulledChip) chips.add(new Widgets.Chip(this).set(Widgets.Chip.OK, Strings.SAVES_UPDATED));
@@ -1173,7 +1178,7 @@ public final class SetupActivity extends Activity implements SetupService.Listen
         homeItem(menu, "home:saves", "save", Strings.SAVES, Strings.savesSummary(liveSlots == null ? 0 : liveSlots.size(),
                 liveSlots == null ? 0 : SaveManager.newest(liveSlots), folderSummary()), v -> go(Screen.SAVES), 88, 8);
         homeItem(menu, "home:data", "data", Strings.GAME_DATA, missing ? StorageLocation.label(this) + " · " + Strings.NOT_AVAILABLE
-                : Strings.dataSummary(Strings.size(dataBytes()), SettingsStore.secondaryDisplay(this),
+                : Strings.dataSummary(Strings.size(dataBytes()), artScreen(),
                         install.done("companion"), install.artOutdated(), install.done("shaders")), v -> go(Screen.DATA), 88, 8);
         homeItem(menu, "home:about", "about", Strings.ABOUT, Strings.ABOUT_HINT, v -> go(Screen.ABOUT), 88, 0);
         primary = start;
@@ -1465,6 +1470,7 @@ public final class SetupActivity extends Activity implements SetupService.Listen
                     break;
                 }
                 case "second_screen": {
+                    if (!ArtPolicy.used(GameBuild.COMPANION)) break;   // the Eden Duo page needs no art
                     InstallState art = InstallState.read(this);
                     fact(Strings.COMPANION_ROW, art.done("companion") ? Strings.READY : art.artOutdated() ? Strings.OUT_OF_DATE : Strings.NOT_PREPARED);
                     break;
@@ -1537,7 +1543,9 @@ public final class SetupActivity extends Activity implements SetupService.Listen
                 });
         boolean secondScreen = SettingsStore.secondaryDisplay(this);
         boolean companion = install.done("companion"), shaders = install.done("shaders") && !seedRefused;
-        Widgets.Row companionRow = dataRow(list, "companion", Strings.COMPANION_ROW, secondScreen ? Strings.COMPANION_HINT : Strings.ART_NOT_NEEDED_HINT,
+        // The art row only where the second screen draws from it (ArtPolicy.used): not for the Eden Duo page.
+        Widgets.Row companionRow = !ArtPolicy.used(GameBuild.COMPANION) ? null
+                : dataRow(list, "companion", Strings.COMPANION_ROW, secondScreen ? Strings.COMPANION_HINT : Strings.ART_NOT_NEEDED_HINT,
                 !secondScreen ? Strings.ART_NOT_NEEDED + " · " + (companion || install.artOutdated() ? Strings.REBUILD : Strings.BUILD)
                         : companion ? Strings.READY + " · " + Strings.REBUILD : !installed ? Strings.NEEDS_SETUP
                         : install.artOutdated() ? Strings.OUT_OF_DATE + " · " + Strings.UPDATE : Strings.NOT_PREPARED + " · " + Strings.BUILD,
@@ -1546,8 +1554,11 @@ public final class SetupActivity extends Activity implements SetupService.Listen
         Widgets.Row shaderRow = dataRow(list, "shaders", Strings.SHADERS_ROW, Strings.SHADERS_HINT,
                 shaders ? Strings.variants(install.shaderVariants()) + " · " + Strings.REBUILD : !installed ? Strings.NEEDS_SETUP : Strings.NOT_BUILT + " · " + Strings.BUILD,
                 shaders ? Theme.ZONAI : Theme.WARN, v -> buildStage("shaders", false));
-        companionRow.dimmed(!installed || busy); shaderRow.dimmed(!installed || busy);
-        gameControl(companionRow, "Preparing game data", () -> buildStage("companion", false));
+        if (companionRow != null) {
+            companionRow.dimmed(!installed || busy);
+            gameControl(companionRow, "Preparing game data", () -> buildStage("companion", false));
+        }
+        shaderRow.dimmed(!installed || busy);
         gameControl(shaderRow, "Preparing shaders", () -> buildStage("shaders", false));
         File driver = gameFile("driver.so");
         String driverName = Inputs.prefs(this).getString("driverName", "driver.so");
@@ -3031,10 +3042,12 @@ public final class SetupActivity extends Activity implements SetupService.Listen
     private String[] stageList() {
         String[] requested = SetupService.status.stages;
         if (requested != null) return requested;
-        String[] all = new String[InstallState.CORE.length + InstallState.PAIR.length];
-        System.arraycopy(InstallState.CORE, 0, all, 0, InstallState.CORE.length);
-        System.arraycopy(InstallState.PAIR, 0, all, InstallState.CORE.length, InstallState.PAIR.length);
-        return all;
+        List<String> all = new ArrayList<>(Arrays.asList(InstallState.CORE));
+        // The optional art stage is listed only where the second screen draws from it (ArtPolicy.used); the setup skips
+        // it otherwise (SetupService skipCompanion).
+        for (String stage : InstallState.PAIR)
+            if (!InstallState.OPTIONAL.equals(stage) || ArtPolicy.used(GameBuild.COMPANION)) all.add(stage);
+        return all.toArray(new String[0]);
     }
     private void install() {
         String rebuild = rebuilding();

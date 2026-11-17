@@ -6,6 +6,13 @@ final class ArtPolicy {
     static final String DECLINED = "artDeclined", START_AFTER_BUILD = "startAfterArt";
     private ArtPolicy() { }
 
+    /** Whether this app's second screen uses the art at all (GameBuild.COMPANION): only CompanionView ("map") draws from
+     *  it. The Eden Duo page ("duo") reads the game's files itself, so the setup neither offers, builds nor updates the
+     *  art (the stage and its code stay for CompanionView, which stays compiled). */
+    static boolean used(String companion) {
+        return !"duo".equals(companion);
+    }
+
     static State state(boolean skipped, boolean failed, boolean present, boolean current) {
         if (present) return current ? State.DONE : State.OUTDATED;
         if (failed) return State.FAILED;

@@ -6,10 +6,12 @@ import com.aure.totk.setup.GameBuild;
 
 /** What the second screen shows, and whether there is anything to show, by the game's companion variable
  *  (games/games.toml companion, GameBuild.COMPANION):
- *  - "map": Tears of the Kingdom's companion, drawn by CompanionView from the art the setup generated on the device;
- *  - "duo": Breath of the Wild's Eden Duo page, drawn by the native companion host (libduo_host.so, GPL-3.0, only in
- *    that game's APK: games.toml gpl_companion) into a DuoSurfaceView. Without that library, or with the companion
- *    turned off, there is no second-screen content and the game runs as it does without one.
+ *  - "map": TotK Native's own companion, drawn by CompanionView from the art the setup generated on the device (MIT;
+ *    compiled into every app, chosen by no game at the moment);
+ *  - "duo": the game's Eden Duo page (Breath of the Wild's, Tears of the Kingdom's), drawn by the native companion host
+ *    (libduo_host.so, GPL-3.0, only in the APKs of games with games.toml gpl_companion) into a DuoSurfaceView. Without
+ *    that library, or with the companion turned off, there is no second-screen content and the game runs as it does
+ *    without one.
  *  Both are CompanionScreens; PresentationController knows nothing else of them. */
 public final class CompanionContent {
     private CompanionContent() { }

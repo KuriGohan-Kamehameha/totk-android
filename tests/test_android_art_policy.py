@@ -22,5 +22,22 @@ class ArtPolicyTests(unittest.TestCase):
             self.assertEqual(result.stdout.strip(), '20 combinations; asset-state precedence passed')
 
 
+    def test_the_eden_duo_page_is_not_offered_art(self):
+        # games.toml companion = "duo" (both games today): the setup neither lists, offers, builds nor updates the art
+        # stage; its code stays for CompanionView (ArtPolicy.used).
+        setup = SOURCE.parent
+        service = (setup / 'SetupService.java').read_text()
+        self.assertIn('opened.request.put("skipCompanion", !ArtPolicy.used(GameBuild.COMPANION)', service)
+        activity = (setup / 'SetupActivity.java').read_text()
+        self.assertIn('return ArtPolicy.used(GameBuild.COMPANION) && SettingsStore.secondaryDisplay(this);', activity)
+        for call in ('ArtPolicy.updateAutomatically(artScreen(),', 'ArtPolicy.offerBeforePlay(artScreen(),',
+                     'if (!InstallState.OPTIONAL.equals(stage) || ArtPolicy.used(GameBuild.COMPANION)) all.add(stage);',
+                     'Widgets.Row companionRow = !ArtPolicy.used(GameBuild.COMPANION) ? null'):
+            self.assertIn(call, activity)
+        self.assertNotIn('ArtPolicy.offerBeforePlay(SettingsStore.secondaryDisplay', activity)
+        self.assertIn('ArtPolicy.used(GameBuild.COMPANION) && !done("companion")', (setup / 'InstallState.java').read_text())
+        self.assertTrue((ROOT / 'games/totk/android/setup/companion/stage_companion.c').is_file())   # the stage stays
+
+
 if __name__ == '__main__':
     unittest.main()

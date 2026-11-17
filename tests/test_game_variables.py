@@ -29,7 +29,7 @@ class GameVariables(unittest.TestCase):
             for g in self.data['games']:
                 self.assertIn(g, spec, f'{name}: no value for {g}')
         for required in ('nso_version', 'game_id', 'title', 'version_label', 'title_id', 'romfs_size', 'app_name', 'accent',
-                         'launcher_art', 'launcher_background', 'companion', 'gpl_companion', 'bifrost_looks', 'env_defaults',
+                         'launcher_art', 'launcher_background', 'companion', 'gpl_companion', 'duo', 'bifrost_looks', 'env_defaults',
                          'c_defines', 'game_patches', 'shader_seed', 'docs', 'mod_manager'):
             self.assertIn(required, self.data['var'])
 
@@ -60,6 +60,37 @@ class GameVariables(unittest.TestCase):
                          v['docs']] + ['games/totk/' + p for p in v['game_patches']]:
                 self.assertTrue((ROOT / path).exists(), f'{g}: {path}')
             self.assertEqual(len(v['launcher_background']), 3)
+
+    def test_duo_names_a_vendored_module_and_package_the_build_knows(self):
+        # duo.module / duo.package of every gpl_companion game: vendored files, a title duo/CMakeLists.txt builds, and
+        # what android/Makefile and build_release.py / audit_apk.py read (tools/games.py get <game> duo.<key>).
+        cmake = (ROOT / 'games/totk/duo/CMakeLists.txt').read_text()
+        companions = ROOT / 'games/totk/duo/vendor/companions'
+        make = (ROOT / 'games/totk/android/Makefile').read_text()
+        self.assertIn('DUO_TITLE := $(shell $(GAMES_PY) get $(VERSION) title_id)', make)
+        self.assertIn('DUO_MODULE := $(shell $(GAMES_PY) get $(VERSION) duo.module)', make)
+        self.assertIn('-DDUO_TITLE=$(DUO_TITLE) -DDUO_MODULE=$(DUO_MODULE)', make)
+        self.assertIn('runtime/duo_port.c', make.split('RUNTIME_C :=', 1)[1].split('\n', 1)[0])   # common runtime code
+        for g in self.data['games']:
+            v = games.values(g, self.data)
+            with self.subTest(game=g):
+                self.assertNotIn('runtime/duo_port.c', v['game_patches'])
+                if not v['gpl_companion']:
+                    continue
+                self.assertEqual(v['companion'], 'duo')
+                self.assertTrue((companions / v['duo']['module']).is_file(), v['duo']['module'])
+                self.assertTrue((companions / 'packages' / v['duo']['package'] / 'dualscreen/manifest.json').is_file())
+                self.assertEqual(v['duo']['module'], f'native/modules/{v["title_id"]}.cpp')
+                self.assertIn(f'if (DUO_TITLE STREQUAL "{v["title_id"]}")', cmake.replace('elseif', 'if'))
+                self.assertIn(f'set(DUO_MODULE_MAIN {v["duo"]["module"]})', cmake)
+                import json
+                manifest = json.loads((companions / 'packages' / v['duo']['package'] / 'dualscreen/manifest.json').read_text())
+                self.assertEqual(manifest['title_id'].upper(), v['title_id'])
+        out = subprocess.run([sys.executable, str(ROOT / 'tools/games.py'), 'get', 'v143', 'duo.package'],
+                             capture_output=True, text=True, check=True).stdout.strip()
+        self.assertEqual(out, 'TearsOfTheKingdom')
+        with self.assertRaises(games.GameError):
+            games.main(['get', 'v143', 'duo.nothing'])
 
     def test_committed_game_build_is_the_generated_totk_one(self):
         self.assertEqual(GAME_BUILD.read_text(), games.java('totk', self.data),

@@ -7,6 +7,7 @@
 #include "game_version.h"
 #include "android_thermal.h"
 #include "world_survey.h"
+#include "duo_link.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -105,6 +106,9 @@ void runtime_frame_step_pin(double ms){
     fprintf(stderr,"[totk] 1.4.3 frame step %s (pin %.3f ms)\n",us?"pinned":"real time",us/1000.0);
 }
 void runtime_frame_step_update(uint64_t now_ns){
+#if DUO_LINK_WEAK
+    if(runtime_duo_frame)runtime_duo_frame();   /* the second-screen companion ticks with the game's frames (duo_port.c); never blocks */
+#endif
     if(!frame_step_data||!now_ns){frame_step_capture_clear();return;}
     if(atomic_load_explicit(&pinned_step_us,memory_order_relaxed)){frame_step_capture_clear();last_present_ns=now_ns;return;}
     if(!last_present_ns){frame_step_capture_clear();last_present_ns=now_ns;return;}
@@ -1076,6 +1080,9 @@ void runtime_game_patches(Module *m) {
     if (strcmp(m->name, "main")) runtime_fail("1.4.3 game patches expect main");
 #if !TARGET_OS_IPHONE   /* the phone's code is signed as built: nothing is patched at start */
     mod_ips_load(m);   /* a mod's IPS files for this main (mod_ips.h), before this runtime's own patches check their original words */
+#endif
+#if DUO_LINK_WEAK
+    if (runtime_duo_main) runtime_duo_main(m);   /* the companion reads main where it is mapped; it patches nothing */
 #endif
     patch_bench_time(m);
     patch_realtime(m);

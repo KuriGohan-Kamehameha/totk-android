@@ -1,18 +1,18 @@
-/* The Eden Duo companion for Breath of the Wild (duo/): the runtime's side of duo/duo_port.h. Built into the Breath of
-   the Wild runtime only (android/Makefile VERSION=botw160).
+/* The Eden Duo companion (duo/): the runtime's side of duo/duo_port.h. Common Android app code, built for every game
+   (android/Makefile); the game's APK carries libduo_host.so only when games/games.toml says gpl_companion (Breath of the
+   Wild and Tears of the Kingdom), and without it this file only logs that the companion is off.
 
-   The companion host is a separate library, libduo_host.so (C++, GPL-3.0-or-later: Eden Duo's runtime and its Breath
-   of the Wild module), that this file opens with dlopen and talks to through one table of plain C functions. Nothing of
-   it is linked into the runtime, and nothing here depends on it: without the library (a build that leaves it out, a
-   load error) or with TOTK_DUO=0 the game starts and plays as before, and one line in the log says why the companion
-   is off.
+   The companion host is a separate library, libduo_host.so (C++, GPL-3.0-or-later: Eden Duo's runtime and the game's
+   title module), that this file opens with dlopen and talks to through one table of plain C functions. Nothing of it
+   is linked into the runtime, and nothing here depends on it: without the library (a build that leaves it out, a load
+   error) or with TOTK_DUO=0 the game starts and plays as before, and one line in the log says why the companion is off.
 
-   The host gets: where main is and how large (runtime_duo_main, from the loader's patch pass), the fault-free reader
-   (host_os.c host_safe_read), the stateless RomFS readers (romfs.c, aoc_romfs.c), the log, and one call per presented
-   frame (runtime_duo_frame, from runtime_frame_step_update). The first of those calls opens the library, so the game's
-   modules are loaded and published by then; the host does everything slow on its own thread. It only reads: this
-   milestone installs no load plan and patches no game code. */
-#ifdef GAME_BOTW
+   The host gets: where main is, how large and its build id (runtime_duo_main, from the loader's patch pass), the
+   game's title id, the fault-free reader (host_os.c host_safe_read), the stateless RomFS readers (romfs.c; aoc_romfs.c
+   where the game links it), the log, and one call per presented frame (runtime_duo_frame, from
+   runtime_frame_step_update). The first of those calls opens the library, so the game's modules are loaded and
+   published by then; the host does everything slow on its own thread. It only reads: this milestone installs no load
+   plan and patches no game code. */
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -20,6 +20,7 @@
 #include "host_os.h"
 #include "duo_link.h"
 #include "companion_state.h"
+#include "mod_ips.h"
 #include "../duo/duo_port.h"
 #include <dlfcn.h>
 #include <pthread.h>
@@ -36,12 +37,22 @@
 #include <sys/stat.h>
 
 int64_t runtime_romfs_read_rel(const char *rel, uint64_t offset, void *out, uint64_t n);   /* romfs.c */
-int64_t runtime_aoc_read_rel(const char *rel, uint64_t offset, void *out, uint64_t n);     /* aoc_romfs.c */
+/* aoc_romfs.c, linked by games with add-on content (games.toml game_patches: Breath of the Wild); NULL elsewhere, which
+   the host reads as "no such volume". */
+int64_t runtime_aoc_read_rel(const char *rel, uint64_t offset, void *out, uint64_t n) __attribute__((weak));
+/* The title id the host and its package check (games.toml title_id; services.c and fs_host.c have their own copies). */
+#ifdef GAME_BOTW
+#define DUO_TITLE_ID 0x01007EF00011E000ull
+#else
+#define DUO_TITLE_ID 0x0100F2C0115B6000ull
+#endif
 #ifdef TOTK_ANDROID_APP
 const char *runtime_android_private_files(void);                                           /* frontend_android.c */
 #endif
 
 static uint64_t main_base, main_size;
+static uint8_t main_build[32];
+static int main_build_read;
 static _Atomic uint64_t frames;
 static void (*host_frame)(void);
 static pthread_once_t start_once = PTHREAD_ONCE_INIT;
@@ -135,12 +146,14 @@ static void start(void) {
        private files folder, filled from the APK by DuoSurfaceView.prepare. Elsewhere: TOTK_DUO_DIR. */
     static char root[1200], data[1200];
     DuoPort port = {.abi = DUO_PORT_ABI, .size = sizeof port, .main_base = main_base, .main_size = main_size,
-        .title_id = 0x01007EF00011E000ull,
-#ifdef GAME_BOTW160
-        .build_id = {0x8E, 0x99, 0x78, 0xD5, 0x0B, 0xDD, 0x20, 0xB4, 0xC8, 0x39, 0x5A, 0x10, 0x6C, 0x27, 0xFF, 0xDE},   /* 1.6.0 main */
-#endif
+        .title_id = DUO_TITLE_ID,
         .safe_read = port_safe_read, .romfs_read = runtime_romfs_read_rel, .aoc_read = runtime_aoc_read_rel,
         .log = port_log, .frames = port_frames, .place_thread = port_place_thread, .state = port_state};
+    /* main's own build id (its GNU note, as mods match it: mod_ips.h), so a package for another build of the game is
+       refused by the host with its own diagnostic. Breath of the Wild 1.6.0: 8E9978D50BDD20B4C8395A106C27FFDE,
+       Tears of the Kingdom 1.4.3: 277178B7DBA1B6D4949A84778D4ABC58B31B34F5. */
+    if (main_build_read) memcpy(port.build_id, main_build, sizeof port.build_id);
+    else fprintf(stderr, "[duo] main has no single build-id note; the package will not match it\n");
     const char *dir = getenv("TOTK_DUO_DIR");
 #ifdef TOTK_ANDROID_APP
     const char *files = runtime_android_private_files();
@@ -155,7 +168,10 @@ static void start(void) {
     fprintf(stderr, "[duo] companion library started (TOTK_DUO=0: off, TOTK_DUO=module: the module alone, values in this log)\n");
 }
 
-void runtime_duo_main(const Module *m) { main_base = (uint64_t)(uintptr_t)m->base; main_size = m->size; }
+void runtime_duo_main(const Module *m) {
+    main_base = (uint64_t)(uintptr_t)m->base; main_size = m->size;
+    main_build_read = mod_ips_build_id(m, main_build);
+}
 
 void runtime_duo_frame(void) {
     atomic_fetch_add_explicit(&frames, 1, memory_order_relaxed);
@@ -163,4 +179,3 @@ void runtime_duo_frame(void) {
     void (*frame)(void) = __atomic_load_n(&host_frame, __ATOMIC_ACQUIRE);
     if (frame) frame();
 }
-#endif

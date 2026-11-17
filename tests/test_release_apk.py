@@ -82,25 +82,95 @@ class AuditTests(unittest.TestCase):
         stored = self.audit({**GOOD, 'assets/shader_list.tsv': committed}, stored=('assets/shader_list.tsv',))
         self.assertTrue(any('must be compressed' in p for p in stored))
 
-    def test_eden_duo_companion_is_admitted_for_breath_of_the_wild_only(self):
-        """libduo_host.so and its package (games/totk/duo/vendor) belong to the botw160 build alone, and the package must
-        be the vendored one byte for byte."""
-        package = audit_apk.DUO_PACKAGE
-        duo = {'lib/arm64-v8a/libduo_host.so': ELF,
-               audit_apk.DUO_ASSETS + 'manifest.json': (package / 'manifest.json').read_bytes(),
-               audit_apk.DUO_ASSETS + '8E9978D50BDD20B4.json': (package / '8E9978D50BDD20B4.json').read_bytes(),
-               audit_apk.DUO_ASSETS + 'assets/pov-cone.png': (package / 'assets/pov-cone.png').read_bytes()}
-        botw = lambda entries: audit_apk.audit(apk(self.dir / f'{len(os.listdir(self.dir))}.apk', entries), game='botw160')
-        self.assertEqual(botw({**GOOD, **duo}), [])
-        self.assertEqual(botw(GOOD), [])   # the companion is optional: the app starts without the library
-        for name in duo:
-            with self.subTest(name=name):
-                self.assertTrue(any('not on the allowlist' in p for p in self.audit({**GOOD, name: duo[name]})))
-        changed = {**GOOD, **duo, audit_apk.DUO_ASSETS + 'assets/pov-cone.png': b'\x89PNG other'}
-        self.assertTrue(any('differs from the vendored companion package' in p for p in botw(changed)))
-        for name in ('load-plans/8E9978D50BDD20B4C8395A106C27FFDE00000000000000000000000000000000.json', 'assets/map.jpg', 'x.so'):
-            with self.subTest(name=name):
-                self.assertNotEqual(botw({**GOOD, **duo, audit_apk.DUO_ASSETS + name: b'{}'}), [])
+    def duo_entries(self, game):
+        """libduo_host.so and a few files of the game's own package (games.toml duo.package), as build_release packs them."""
+        package, prefix = audit_apk.duo_package(game)
+        names = {'botw160': ['manifest.json', 'ASSETS.provenance.json', '8E9978D50BDD20B4.json', 'assets/pov-cone.png'],
+                 'v143': ['manifest.json', 'ASSETS.provenance.json', 'map_tiles.txt', 'totk_font.txt', 'assets/cmdbar-228x112-normal.png']}[game]
+        return {'lib/arm64-v8a/libduo_host.so': ELF, **{prefix + n: (package / n).read_bytes() for n in names}}, prefix
+
+    def test_eden_duo_companion_carries_the_games_own_package(self):
+        """Each gpl_companion game (games.toml: both) may carry libduo_host.so and its own package (games/totk/duo/vendor,
+        duo.package), byte for byte the vendored one; another game's package is not on its allowlist."""
+        self.assertEqual(audit_apk.duo_package('v143')[1], 'assets/duo/TearsOfTheKingdom/dualscreen/')
+        self.assertEqual(audit_apk.duo_package('botw')[1], 'assets/duo/BreathOfTheWild/dualscreen/')
+        for game, other in (('botw160', 'v143'), ('v143', 'botw160')):
+            with self.subTest(game=game):
+                run = lambda entries: audit_apk.audit(apk(self.dir / f'{len(os.listdir(self.dir))}.apk', entries), game=game)
+                duo, prefix = self.duo_entries(game)
+                self.assertEqual(run({**GOOD, **duo}), [])
+                self.assertEqual(run(GOOD), [])   # the companion is optional: the app starts without the library
+                foreign = {k: v for k, v in self.duo_entries(other)[0].items() if not k.startswith('lib/')}
+                for name, data in foreign.items():
+                    self.assertTrue(any('not on the allowlist' in p for p in run({**GOOD, **duo, name: data})), name)
+                png = next(n for n in duo if n.endswith('.png'))
+                self.assertTrue(any('differs from the vendored companion package' in p
+                                    for p in run({**GOOD, **duo, png: b'\x89PNG other'})))
+                for name in ('load-plans/8E9978D50BDD20B4C8395A106C27FFDE00000000000000000000000000000000.json',
+                             'assets/map.jpg', 'x.so', 'assets/notes.txt', 'map-tiles.txt', 'manifest.json.zs'):
+                    self.assertNotEqual(run({**GOOD, **duo, prefix + name: b'{}'}), [], name)
+        # A changed TotK file list is refused like a changed image.
+        duo, prefix = self.duo_entries('v143')
+        changed = audit_apk.audit(apk(self.dir / 'tiles.apk', {**GOOD, **duo, prefix + 'map_tiles.txt': b'UI/Map/other\n'}), game='v143')
+        self.assertTrue(any('differs from the vendored companion package' in p for p in changed))
+
+    def test_eden_duo_companion_is_refused_without_gpl_companion(self):
+        """A game whose gpl_companion is false may carry none of it (games.toml; the variable stays)."""
+        from unittest import mock
+        real = audit_apk.games.values
+        def values(game):
+            v = dict(real(game))
+            v['gpl_companion'] = False
+            return v
+        with mock.patch.object(audit_apk.games, 'values', values):
+            for game in ('v143', 'botw160'):
+                duo, _ = self.duo_entries(game)
+                for name, data in duo.items():
+                    with self.subTest(game=game, name=name):
+                        found = audit_apk.audit(apk(self.dir / f'{len(os.listdir(self.dir))}.apk', {**GOOD, name: data}), game=game)
+                        self.assertTrue(any('not on the allowlist' in p for p in found))
+
+    def test_release_stages_the_games_own_package(self):
+        """build_release.stage_assets packs games.toml duo.package minus load plans; what it stages passes the audit."""
+        saved = release.GAME
+        self.addCleanup(setattr, release, 'GAME', saved)
+        for game, name in (('totk', 'TearsOfTheKingdom'), ('botw', 'BreathOfTheWild')):
+            with self.subTest(game=game):
+                release.GAME = release.games.values(game)
+                stage = release.stage_assets(self.dir / f'stage-{game}', {'TotK-Native.txt': 'MIT\n'}, commit='85f12832ab12')
+                packages = sorted(p.name for p in (stage / 'duo').iterdir())
+                self.assertEqual(packages, [name])
+                staged = sorted(str(p.relative_to(stage)) for p in (stage / 'duo').rglob('*') if p.is_file())
+                self.assertIn(f'duo/{name}/dualscreen/manifest.json', staged)
+                self.assertFalse(any('load-plans' in s for s in staged))
+                entries = {f'assets/{s}': (stage / s).read_bytes() for s in staged}
+                found = audit_apk.audit(apk(self.dir / f'staged-{game}.apk', {**GOOD, **entries}), game=game)
+                self.assertEqual(found, [])
+
+    def test_gpl_release_refuses_uncommitted_changes(self):
+        """The APK is GPL-3.0-or-later as a whole: a release names a commit that exists as built (build.txt). A dirty tree
+        stops a release before anything is built; a developer build only warns."""
+        from unittest import mock
+        saved = release.GAME
+        self.addCleanup(setattr, release, 'GAME', saved)
+        release.GAME = release.games.values('totk')
+        self.assertTrue(release.GAME['gpl_companion'])
+
+        class Built(Exception):
+            pass
+
+        def build_native(*a, **k):
+            raise Built()
+        args = dict(work=self.dir / 'work', ndk=self.dir, logs=self.dir, out=self.dir / 'x.apk', key=self.dir / 'k')
+        with mock.patch.object(release, 'source_commit', lambda: '85f12832ab12-dirty'), \
+                mock.patch.object(release, 'build_native', build_native), mock.patch.object(release, 'say', lambda *a: None):
+            with self.assertRaisesRegex(release.BuildError, 'commit the changes first'):
+                release.app(release=True, **args)
+            with self.assertRaises(Built):
+                release.app(release=False, make_key=True, **args)
+        with mock.patch.object(release, 'source_commit', lambda: '85f12832ab12'), mock.patch.object(release, 'build_native', build_native):
+            with self.assertRaises(Built):
+                release.app(release=True, **args)
 
     def test_turnip_must_be_the_pinned_build(self):
         self.assertTrue(any('pinned Turnip' in p for p in self.audit({**GOOD, 'lib/arm64-v8a/libtotk_turnip.so': ELF})))

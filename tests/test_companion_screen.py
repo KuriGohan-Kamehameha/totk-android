@@ -1,9 +1,10 @@
 """The second screen's shell contract (CompanionScreen): both games' screens behind one interface, the page round
 trip, and the shell's pump that publishes the page to the common state and tells the screen what the game does.
 
-The real CompanionView (Tears of the Kingdom), DuoSurfaceView (Breath of the Wild), the one CompanionContent (which
-picks by GameBuild.COMPANION, generated from games/games.toml for each game) and PresentationController's pump run here
-on a plain JVM over the smallest android.* that compiles them."""
+The real CompanionView (TotK Native's MIT page, compiled into every app and chosen by no game at the moment: run here
+with a GameBuild that names it), DuoSurfaceView (the Eden Duo page of both games), the one CompanionContent (which picks
+by GameBuild.COMPANION, generated from games/games.toml for each game) and PresentationController's pump run here on a
+plain JVM over the smallest android.* that compiles them."""
 import shutil
 import subprocess
 import sys
@@ -214,17 +215,17 @@ public final class ScreenProbe {
             @Override public String read(int detail) { return null; }
             @Override public boolean send(int kind, int arg) { return false; }
         };
-        boolean botw = args[0].equals("botw");
+        boolean botw = args[0].equals("botw"), duo = args[1].equals("duo");
         require(CompanionContent.TABLET_CAN_BE_MISSING == botw, "the build says whether its tablet can be missing");
         for (int initial = 0; initial < 3; initial++) {
             CompanionScreen screen = CompanionContent.create(context, source, initial);
             require(screen.view() == screen, "the screen is its own view");
-            require(screen.getClass().getSimpleName().equals(botw ? "DuoSurfaceView" : "CompanionView"), "this build's screen");
+            require(screen.getClass().getSimpleName().equals(duo ? "DuoSurfaceView" : "CompanionView"), "this build's screen");
             CompanionState state = new CompanionState();
             screen.onGameState(state);                                    // no state at all is a state a screen takes
             require(state.set(new long[]{CompanionState.READY, 1, 1, 1, 12, 12, initial, 0}), "state");
             screen.onGameState(state);
-            if (botw) {
+            if (duo) {
                 // The native page keeps its own pages: none to report, and a request changes nothing here.
                 require(screen.page() == -1, "no page of its own");
                 screen.setPage(2); require(screen.page() == -1, "still none");
@@ -244,7 +245,7 @@ public final class ScreenProbe {
             require(android.view.View.invalidated == redraws + 1, "told twice, redrawn once");
             require(screen.page() == 1, "the game's state does not move the page");
         }
-        System.out.println("pass: companion screen " + args[0]);
+        System.out.println("pass: companion screen " + args[0] + " " + args[1]);
     }
 }
 '''
@@ -411,17 +412,30 @@ class CompanionScreenTests(unittest.TestCase):
         self.assertNotIn('CompanionView', controller)      # the shell knows the interface, not a game's screen
         self.assertNotIn('DuoSurfaceView', controller)
 
-    def screen_classes(self, game):
-        """Both screens and the one CompanionContent, compiled with this game's generated GameBuild."""
+    def screen_classes(self, game, companion=None):
+        """Both screens and the one CompanionContent, compiled with this game's generated GameBuild (with another
+        companion value when given: the MIT page is chosen by no game today, but stays compiled and working)."""
         shared = [JAVA / n for n in ('CompanionScreen.java', 'CompanionState.java', 'DataSource.java', 'ItemActions.java', 'Motion.java',
                                      'CompanionView.java', 'DuoSurfaceView.java', 'CompanionContent.java')]
-        sources = self.write(game, {**ANDROID_STUBS, **TOTK_STUBS, 'com/aure/totk/companion/ScreenProbe.java': SCREEN_PROBE,
-                                    'com/aure/totk/setup/GameBuild.java': games.java(game)})
-        return self.build(game, sources + shared)
+        build = games.java(game)
+        if companion:
+            current = f'COMPANION = "{games.values(game)["companion"]}"'
+            self.assertIn(current, build)
+            build = build.replace(current, f'COMPANION = "{companion}"')
+        name = game + (f'-{companion}' if companion else '')
+        sources = self.write(name, {**ANDROID_STUBS, **TOTK_STUBS, 'com/aure/totk/companion/ScreenProbe.java': SCREEN_PROBE,
+                                    'com/aure/totk/setup/GameBuild.java': build})
+        return self.build(name, sources + shared)
 
-    def test_totk_screen_page_round_trip(self):
+    def test_totk_screen_is_the_eden_duo_page(self):
         classes = self.screen_classes('totk')
-        self.assertIn('pass: companion screen totk', self.run_probe(classes, 'com.aure.totk.companion.ScreenProbe', 'totk'))
+        self.assertIn('pass: companion screen totk duo', self.run_probe(classes, 'com.aure.totk.companion.ScreenProbe', 'totk', 'duo'))
+
+    def test_mit_screen_page_round_trip(self):
+        # CompanionView, kept compiled but unused (games.toml companion = "duo" for both games), still works behind the
+        # interface when a build names it.
+        classes = self.screen_classes('totk', companion='map')
+        self.assertIn('pass: companion screen totk map', self.run_probe(classes, 'com.aure.totk.companion.ScreenProbe', 'totk', 'map'))
 
     def test_totk_ready_rules(self):
         classes = self.screen_classes('totk')
@@ -434,12 +448,13 @@ class CompanionScreenTests(unittest.TestCase):
     def test_botw_screen_keeps_no_page_and_needs_no_library(self):
         # No libduo_host.so on the host: the class still loads and the screen still stands behind the interface.
         classes = self.screen_classes('botw')
-        self.assertIn('pass: companion screen botw', self.run_probe(classes, 'com.aure.totk.companion.ScreenProbe', 'botw'))
+        self.assertIn('pass: companion screen botw duo', self.run_probe(classes, 'com.aure.totk.companion.ScreenProbe', 'botw', 'duo'))
 
     def test_screen_is_chosen_by_the_game_variable(self):
         content = (JAVA / 'CompanionContent.java').read_text()
         self.assertIn('GameBuild.COMPANION.equals("duo")', content)
-        self.assertEqual({games.values(g)['companion'] for g in ('totk', 'botw')}, {'map', 'duo'})
+        self.assertIn('new CompanionView(context, source)', content)   # the MIT page stays compiled
+        self.assertEqual({games.values(g)['companion'] for g in ('totk', 'botw')}, {'duo'})
         self.assertFalse((ANDROID / 'java-botw').exists())   # no per-game file overrides
 
     def test_shell_publishes_the_page_and_tells_the_screen(self):

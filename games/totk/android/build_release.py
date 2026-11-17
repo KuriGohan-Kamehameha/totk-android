@@ -139,7 +139,7 @@ def build_native(work, ndk, logs, *, release, jobs, setup=True):
         raise BuildError(f'no libc++_shared.so in the NDK ({cxx})')
     libs.append(cxx)   # libtotk_lsfg.so and Vulkan drivers built against the NDK's C++ library
     if GAME['gpl_companion']:
-        libs.append(out / 'libduo_host.so')   # the Eden Duo companion host (duo/, GPL-3.0-or-later; make builds it for this game)
+        libs.append(out / 'libduo_host.so')   # the Eden Duo companion host (duo/, GPL-3.0-or-later; make builds it with this game's module)
     if setup:
         libs += [out / 'libtotk_setup.so', out / 'libhactool.so']
     for lib in libs:
@@ -271,8 +271,8 @@ def licence_texts(work, ndk, *, setup=True):
         # texture decoders and image code ported into the companion stage (texture2ddecoder, AssetStudio, mikunyan, bimg, Pillow)
         files['companion-ports.txt'] = [HERE / 'setup/companion/THIRD_PARTY_LICENSES.txt']
     if GAME['gpl_companion']:
-        # libduo_host.so: Eden Duo's runtime and its Breath of the Wild module make this APK GPL-3.0-or-later as a whole;
-        # the notice says so, names the vendored commits and where the corresponding source is (duo/NOTICE.txt).
+        # libduo_host.so: Eden Duo's runtime and the game's title module make this APK GPL-3.0-or-later as a whole; the
+        # notice says so, names the vendored commits and where the corresponding source is (duo/NOTICE.txt).
         duo = t / 'duo'
         files['Eden-Duo.txt'] = [duo / 'NOTICE.txt', duo / 'vendor/emu/LICENSE.txt']
         files['Eden-Duo-third-party.txt'] = [duo / 'THIRD_PARTY_LICENSES.txt']
@@ -295,7 +295,9 @@ def licence_texts(work, ndk, *, setup=True):
                 ('nlohmann/json', duo / 'third_party/nlohmann/LICENSE.MIT'), ('unordered_dense', duo / 'third_party/ankerl/LICENSE'),
                 ('MIT', duo / 'emu/LICENSES/MIT.txt'), ('Mozilla Public License 2.0', duo / 'emu/LICENSES/MPL-2.0.txt'),
                 ('Apache License 2.0', duo / 'emu/LICENSES/Apache-2.0.txt'),
-                ('GNU General Public License 2.0 or later (files so tagged)', duo / 'emu/LICENSES/GPL-2.0-or-later.txt')))
+                ('GNU General Public License 2.0 or later (files so tagged)', duo / 'emu/LICENSES/GPL-2.0-or-later.txt'),
+                ('zstd', duo / 'third_party/zstd/LICENSE'),
+                ('Tears of the Kingdom reader (MIT)', duo / 'companions/native/modules/totk_reader/LICENSE.MIT')))
     if setup:   # hactool's bundled third-party sources carry their notices in their headers
         hactool = work / 'src/hactool-setup'
         texts['hactool.txt'] += ''.join(f'\n\n==== {n} ====\n{leading_comment(hactool / n)}\n' for n in ('cJSON.h', 'lz4.h', 'ConvertUTF.h')
@@ -306,7 +308,8 @@ def licence_texts(work, ndk, *, setup=True):
 def stage_assets(stage, texts, commit=None):
     """assets/: fonts/ (the open fonts and their licences, android/app-assets/fonts), licenses/ (one text per component),
     shader_list.tsv (the committed shared shader list: the on-device seed's inventory, shader hashes only) and build.txt
-    (the source commit, shown in About); for Breath of the Wild also duo/ (the Eden Duo companion package)."""
+    (the source commit, shown in About); for a game with gpl_companion also duo/ (its Eden Duo companion package,
+    games.toml duo.package)."""
     if stage.exists():
         shutil.rmtree(stage)
     (stage / 'fonts').mkdir(parents=True)
@@ -320,10 +323,12 @@ def stage_assets(stage, texts, commit=None):
         (stage / 'licenses' / name).write_text(text)
     shutil.copy2(TOTK / 'assets/shader_list.tsv', stage / 'shader_list.tsv')
     if GAME['gpl_companion']:
-        # The Breath of the Wild companion package for libduo_host.so, as Eden Duo ships it minus the load plans (not
-        # used yet): pages and code-drawn images, no game art (its ASSETS.provenance.json). DuoSurfaceView unpacks it.
-        package = TOTK / 'duo/vendor/companions/packages/BreathOfTheWild/dualscreen'
-        shutil.copytree(package, stage / 'duo/BreathOfTheWild/dualscreen', ignore=shutil.ignore_patterns('load-plans'))
+        # The game's companion package for libduo_host.so (games.toml duo.package), as Eden Duo ships it minus the load
+        # plans (not used yet): pages, code-drawn images and the lists of game files the module reads on the device, no
+        # game art (its ASSETS.provenance.json). DuoSurfaceView unpacks it.
+        name = GAME['duo']['package']
+        package = TOTK / 'duo/vendor/companions/packages' / name / 'dualscreen'
+        shutil.copytree(package, stage / 'duo' / name / 'dualscreen', ignore=shutil.ignore_patterns('load-plans'))
     if commit:
         (stage / 'build.txt').write_text(f'commit {commit}\n')
     return stage
@@ -402,12 +407,20 @@ def app(*, work, ndk, logs, out, key, key_pass_env=None, make_key=False, release
     public release (release=True, the caller's key and the pinned Turnip) and build_android.py --apk (a debuggable build
     signed with the work folder's developer key)."""
     work, out = Path(work), Path(out)
+    commit = source_commit()
+    if GAME['gpl_companion'] and commit.endswith('-dirty'):
+        # The APK is GPL-3.0-or-later as a whole (duo/NOTICE.txt): its corresponding source is the commit in build.txt,
+        # which must exist as it was built. A developer build only warns; a release refuses.
+        if release:
+            raise BuildError(f'{GAME["app_name"]} carries the GPL Eden Duo companion: commit the changes first '
+                             f'(build.txt must name a commit that can be published as its source; HEAD is {commit})')
+        say(f'warning: building from uncommitted changes ({commit}); this APK must not be distributed (GPL source)')
     work.mkdir(parents=True, exist_ok=True)
     libs = build_native(work, ndk, logs, release=release, jobs=jobs)
     libs = strip_debug(libs, work, ndk, logs)   # every APK passes the same audit; the full libraries stay in <work>/symbols
     xlate = release_translator(translator, work, ndk, logs)
     dex = build_classes(android_sdk, work / 'classes.dex', logs)
-    assets = stage_assets(work / 'apk-stage/assets', licence_texts(work, ndk), commit=source_commit())
+    assets = stage_assets(work / 'apk-stage/assets', licence_texts(work, ndk), commit=commit)
     stamp = int(git('log', '-1', '--format=%ct'))
     # Developer builds (make_key) keep a time-based versionCode, so each one updates the previous developer build.
     name = version_name or (f'{APP_VERSION}-dev' if make_key else APP_VERSION)

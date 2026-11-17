@@ -35,7 +35,7 @@ totk = "1.4.3"
 botw = "1.6.0"
 
 [var.title_id]
-meaning = "The game's title id (saves export/import in SaveManager; the runtime's own copies are under [branches]: fs_host.c, services.c, duo_port.c)"
+meaning = "The game's title id (saves export/import in SaveManager; android/Makefile hands it to duo/CMakeLists.txt as DUO_TITLE, which picks the title module; the runtime's own copies are under [branches]: fs_host.c, services.c, duo_port.c)"
 totk = "0100F2C0115B6000"
 botw = "01007EF00011E000"
 
@@ -74,7 +74,7 @@ botw = ["GAME_BOTW=1", "GAME_BOTW160=1"]
 [var.game_patches]
 meaning = "Runtime sources only this game links (Makefile PATCHES): its game-code patches and game-only services"
 totk = ["runtime/game_patches_v143.c"]
-botw = ["runtime/game_patches_botw.c", "runtime/settings_service.c", "runtime/aoc_romfs.c", "runtime/duo_port.c"]
+botw = ["runtime/game_patches_botw.c", "runtime/settings_service.c", "runtime/aoc_romfs.c"]
 
 [var.env_defaults]
 meaning = "Defaults of runtime switches that differ (totk.env overrides either way). Passed to the compiler as GAME_DEFAULT_<name> (Makefile); the C fallback, used by host tests, is TotK's value"
@@ -124,14 +124,19 @@ totk = "TKMM"
 botw = "BCML"
 
 [var.companion]
-meaning = "Second screen (CompanionContent): 'map' = TotK's own map and inventory (CompanionView), 'duo' = the Eden Duo page drawn by libduo_host.so (DuoSurfaceView). Both sit behind CompanionScreen"
-totk = "map"
+meaning = "Second screen (CompanionContent): 'map' = TotK Native's own map and inventory (CompanionView, MIT, drawn from the art the setup generates; compiled into every app, shown by none at the moment), 'duo' = the Eden Duo page drawn by libduo_host.so (DuoSurfaceView). Both sit behind CompanionScreen. With 'duo' the setup does not offer or update the second-screen art (ArtPolicy.used)"
+totk = "duo"
 botw = "duo"
 
 [var.gpl_companion]
-meaning = "Whether the APK carries the GPL-3.0 Eden Duo companion (libduo_host.so, its package under assets/duo/, Eden licence texts). false: the build and audit_apk.py refuse all of it"
-totk = false
+meaning = "Whether the APK carries the GPL-3.0 Eden Duo companion (libduo_host.so, its package under assets/duo/, Eden licence texts), which makes the APK as a whole GPL-3.0-or-later (duo/NOTICE.txt; build_release.py then refuses a build from a commit with uncommitted changes). false: the build and audit_apk.py refuse all of it"
+totk = true
 botw = true
+
+[var.duo]
+meaning = "The Eden Duo companion of a gpl_companion game: package = the folder under duo/vendor/companions/packages that the APK carries as assets/duo/<package>/dualscreen (build_release.py; audit_apk.py compares it byte for byte), module = the title module's main source under duo/vendor/companions (android/Makefile passes it with title_id to duo/CMakeLists.txt, which adds the sources that module needs)"
+totk = { package = "TearsOfTheKingdom", module = "native/modules/0100F2C0115B6000.cpp" }
+botw = { package = "BreathOfTheWild", module = "native/modules/01007EF00011E000.cpp" }
 
 [var.tablet_can_be_missing]
 meaning = "Whether the game starts without its tablet (BotW's Sheikah Slate; the stick LEDs have a look for that)"
@@ -208,6 +213,7 @@ release_asset = "BotW-Native-"
 "games/totk/android/gfx/vk_shader.c" = { n = 1, vars = ["runtime_code"] }
 "games/totk/android/java/com/aure/totk/BifrostState.java" = { n = 1, vars = ["bifrost_looks"] }
 "games/totk/android/java/com/aure/totk/companion/CompanionContent.java" = { n = 1, vars = ["companion"] }
+"games/totk/android/java/com/aure/totk/setup/ArtPolicy.java" = { n = 1, vars = ["companion"] }
 "games/totk/android/setup/setup.c" = { n = 1, vars = ["ondevice_setup"] }
 "games/totk/app/launcher.m" = { n = 1, vars = ["runtime_code"] }
 "games/totk/ios/tools/build_ipa.py" = { n = 1, vars = ["runtime_code"] }
@@ -216,10 +222,10 @@ release_asset = "BotW-Native-"
 "games/totk/runtime/applet_host.c" = { n = 2, vars = ["runtime_code"] }
 "games/totk/runtime/audio_mixer.h" = { n = 1, vars = ["runtime_code"] }
 "games/totk/runtime/autoload.c" = { n = 1, vars = ["runtime_code"] }
-"games/totk/runtime/companion_jni.c" = { n = 2, vars = ["companion", "runtime_code"] }
+"games/totk/runtime/companion_jni.c" = { n = 1, vars = ["runtime_code"] }
 "games/totk/runtime/companion_snapshot.c" = { n = 1, vars = ["runtime_code"] }
 "games/totk/runtime/drs_framegen.h" = { n = 1, vars = ["runtime_code"] }
-"games/totk/runtime/duo_port.c" = { n = 2, vars = ["companion", "gpl_companion", "title_id"] }
+"games/totk/runtime/duo_port.c" = { n = 1, vars = ["title_id"] }
 "games/totk/runtime/fps_adaptive_runtime.c" = { n = 1, vars = ["runtime_code"] }
 "games/totk/runtime/fps_hybrid_runtime.c" = { n = 1, vars = ["runtime_code"] }
 "games/totk/runtime/frontend.m" = { n = 2, vars = ["runtime_code"] }
@@ -231,7 +237,7 @@ release_asset = "BotW-Native-"
 "games/totk/runtime/game_version.h" = { n = 3, vars = ["nso_version", "runtime_code"] }
 "games/totk/runtime/input.c" = { n = 4, vars = ["runtime_code"] }
 "games/totk/runtime/loader.c" = { n = 11, vars = ["runtime_code"] }
-"games/totk/runtime/romfs.c" = { n = 5, vars = ["runtime_code"] }
+"games/totk/runtime/romfs.c" = { n = 2, vars = ["runtime_code"] }
 "games/totk/runtime/services.c" = { n = 5, vars = ["title_id", "runtime_code"] }
 "games/totk/runtime/shared_font.c" = { n = 2, vars = ["runtime_code"] }
 "games/totk/runtime/threads.c" = { n = 31, vars = ["runtime_code"] }

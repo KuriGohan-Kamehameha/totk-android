@@ -1,0 +1,88 @@
+--- a/games/totk/android/gfx/vk_draw.c
++++ b/games/totk/android/gfx/vk_draw.c
+@@ -474,8 +474,8 @@
+         if (R.dtex && (vk_tex_aspect(R.dtex) & VK_IMAGE_ASPECT_DEPTH_BIT)) pd_copy(cb, R.dtex, R.dlevel, R.dlayer, 1, "d");
+         vk_barrier_all(cb);
+     }
+-    char line[512]; int n = snprintf(line, sizeof line, "p%04d %ux%u colour %u depth fmt %d draws %llu cleared %#x", PD.npass, R.w, R.h, R.ncolor, (int)R.dfmt, (unsigned long long)(g_stat_draws - PD.draws0), R.cleared);
+-    for (uint32_t i = 0; i < R.ncolor && i < 8 && n < (int)sizeof line - 40; i++) if (R.caddr[i]) n += snprintf(line + n, sizeof line - (size_t)n, " c%u@%p", i, R.caddr[i]);
++    char line[1280]; int n = snprintf(line, sizeof line, "p%04d %ux%u colour %u depth fmt %d draws %llu cleared %#x", PD.npass, R.w, R.h, R.ncolor, (int)R.dfmt, (unsigned long long)(g_stat_draws - PD.draws0), R.cleared);
++    for (uint32_t i = 0; i < R.ncolor && i < 8 && n < (int)sizeof line - 90; i++) if (R.caddr[i]) n += snprintf(line + n, sizeof line - (size_t)n, " c%u@%p[ser %llu L%u img %#llx]", i, R.caddr[i], (unsigned long long)R.c_serial[i], (unsigned)R.clevel[i], (unsigned long long)(uintptr_t)(R.ctex[i] ? vk_tex_image(R.ctex[i]) : VK_NULL_HANDLE));
+     if (R.daddr && n < (int)sizeof line - 40) n += snprintf(line + n, sizeof line - (size_t)n, " d@%p", R.daddr);
+     for (uint32_t i = 0; i < 8 && n < (int)sizeof line - 60; i++) if (R.cleared >> i & 1)   /* the clear value's raw words (and its float reading) */
+         n += snprintf(line + n, sizeof line - (size_t)n, " clear%u=%08x,%08x,%08x,%08x(%g)", i, R.cc[i].color.uint32[0], R.cc[i].color.uint32[1], R.cc[i].color.uint32[2], R.cc[i].color.uint32[3], R.cc[i].color.float32[0]);
+@@ -522,7 +522,7 @@
+ }
+ static void pd_draw(int prim, uint32_t count, uint32_t inst, int indexed, vk_shader *const *sh) {   /* every draw of the dumped frame */
+     if (!PD.active) return;
+-    char line[2600], sb[2048] = "";
++    char line[4700], sb[4096] = "";
+     int ns = pd_sbufs(0, sh[0], sb, sizeof sb); if (sh[1] && (size_t)ns < sizeof sb) ns += pd_sbufs(1, sh[1], sb + ns, sizeof sb - (size_t)ns);
+     for (int a = 0; a < 16 && (size_t)ns < sizeof sb; a++) if ((sh[0]->vin_mask >> a & 1) && a < S.nattr && S.attr[a].fmt) {   /* vertex attributes: NVN format, stream, offset, stride */
+         int st = S.attr[a].stream & 15;
+@@ -536,7 +536,11 @@
+         uint64_t h = b->reg >= 0 && b->reg < 128 ? S.tex[st][b->reg] : 0; vk_treg r = {0};
+         int ok = h && vk_treg_get((int)(h & 0xfffff), &r);
+         ns += snprintf(sb + ns, sizeof sb - (size_t)ns, " %ct%d=%#llx", st ? 'f' : 'v', b->reg, (unsigned long long)h);
+-        if (ok && (size_t)ns < sizeof sb) ns += snprintf(sb + ns, sizeof sb - (size_t)ns, "(fmt %#x %ux%ux%u target %d @%p)", r.t.d.format, r.t.d.width, r.t.d.height, r.t.d.depth, r.t.d.target, (const void *)r.t.mem);
++        if (ok && (size_t)ns < sizeof sb) ns += snprintf(sb + ns, sizeof sb - (size_t)ns, "(fmt %#x %ux%ux%u target %d @%p", r.t.d.format, r.t.d.width, r.t.d.height, r.t.d.depth, r.t.d.target, (const void *)r.t.mem);
++        if (ok && (size_t)ns < sizeof sb) {   /* the texture object (levels, serial) and the image the draw reads: two objects over one storage share an image only with the same layout */
++            int want = b->target; vk_tex *x = NULL; vk_tex_by_id((int)(h & 0xfffff), &want, &x);
++            ns += snprintf(sb + ns, sizeof sb - (size_t)ns, " lv %u ser %llu img %#llx)", r.t.d.levels, (unsigned long long)r.t.serial, (unsigned long long)(uintptr_t)(x ? vk_tex_image(x) : VK_NULL_HANDLE));
++        }
+     }
+     int n = snprintf(line, sizeof line, "  draw prim %d count %u inst %u%s%.0d cull %d front %d depth test %d write %d func %d clamp %d fs depth %d blend %#x vp %.0f,%.0f %.0fx%.0f vs %s fs %s%s\n",
+                      prim, count, inst, indexed ? " idx-bytes " : "", indexed == 1 ? 1 : indexed == 2 ? 2 : indexed ? 4 : 0, (int)S.poly.cull, (int)S.poly.front, S.ds.dt, S.ds.dw, (int)S.ds.df, S.depth_clamp, sh[1] ? sh[1]->writes_depth : 0,
+@@ -1476,6 +1480,26 @@
+ #ifdef TOTK_VK_TESTS
+ void vk_draw_test_load_counts(uint64_t out[2]) { out[0] = g_load_proven; out[1] = g_load_elided; }
+ #endif
++#ifdef GAME_BOTW
++/* The same texture level / layer at more than one colour slot (rt_dup_of, nvn_obj.h; nvn_mtl.m BOTW_RT_DUP_*): only the
++   first slot is attached, a later one is left a hole (writes discarded), and its clears go to the first. Breath of the
++   Wild's G-buffer passes attach the albedo and the normals twice each (c1 = c2, c3 = c4) with channel write masks 0 on
++   the second ones; the Switch's ROP writes only unmasked channels, so the slots do not interfere. Here both slots were
++   attachments of one VkImage, which Vulkan leaves undefined: Turnip keeps each attachment in its own GMEM copy and
++   stores both at the end of each pass, so the second slot's copy (loaded at the pass start, never written) overwrote the
++   first slot's writes. The albedo then kept the previous frame's pixels wherever the scene moved: a stale image of the
++   characters blended into the lit scene ("onion skinning" in cutscenes and dialogue).
++   TOTK_BOTW_RT_DUP=0 attaches every slot again (the negative control). */
++static int botw_rt_dup(int i) {
++    static int on = -1; if (on < 0) { const char *e = getenv("TOTK_BOTW_RT_DUP"); on = !(e && !strcmp(e, "0")); if (!on) LOGV("TOTK_BOTW_RT_DUP=0: duplicate colour slots are attached"); }
++    if (!on || !S.has_rt || i <= 0 || i >= S.rt.n || i >= 8) return -1;
++    int j = rt_dup_of(&S.rt, i);
++    if (j >= 0) { static int said; if (!said++) LOGV("[botw] colour slot %d holds the same image as slot %d (serial %llu): left unattached (rt_dup_of)", i, j, (unsigned long long)S.rt.color[i]->serial); }
++    return j;
++}
++#else
++#define botw_rt_dup(i) (-1)
++#endif
+ /* Open the pass for the current targets with the pending clears as load operations. 0 when nothing can be attached. */
+ static int begin_rendering_inner(int draw_tail) {
+     if (R.open) return 1;
+@@ -1494,11 +1518,16 @@
+     memset(R.cfmt, 0, sizeof R.cfmt); R.dfmt = R.sfmt = VK_FORMAT_UNDEFINED; memset(R.ctex, 0, sizeof R.ctex); R.dtex = NULL; R.samples = VK_SAMPLE_COUNT_1_BIT;
+     R.native = R.canvas = 0;
+     memset(R.caddr, 0, sizeof R.caddr); R.daddr = NULL; R.cleared = 0;
++    if (S.has_rt) for (int i = 1; i < S.rt.n && i < 8; i++) {   /* a clear of a slot left unattached goes to the slot holding the same image */
++        int j = botw_rt_dup(i);
++        if (j >= 0 && R.clear_c[i]) { if (!R.clear_c[j]) { R.clear_c[j] = 1; R.cc[j] = R.cc[i]; } R.clear_c[i] = 0; }
++    }
+     if (S.has_rt) for (int i = 0; i < S.rt.n && i < 8; i++) {
+         ca[i] = (VkRenderingAttachmentInfo){VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+             .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD, .storeOp = VK_ATTACHMENT_STORE_OP_STORE};
+         nc = (uint32_t)i + 1;
+         const tex_t *t = S.rt.color[i]; if (!t) continue;
++        if (botw_rt_dup(i) >= 0) continue;   /* a hole: the first slot holding this image is attached */
+         vk_tex *x = vk_tex_get(t); if (!x) continue;
+         const view_t *view = S.rt.has_cview[i] ? &S.rt.cview[i] : NULL;
+         int native = !g_native_draw_1x && S.rt.n == 1 && !S.rt.depth &&
+@@ -3396,6 +3425,8 @@
+     g_pops.clears++; memcpy(g_pops.cc, c->rgba, 16);
+     if (c->index < 0 || c->index >= S.rt.n || c->index >= 8 || !S.rt.color[c->index]) { RED(4, "colour clear of target %d, which is not set", c->index); return; }
+     if (!(c->mask & 0xf)) return;
++    p_clear_color botw_first;   /* a clear of a slot left unattached clears the slot holding the same image */
++    { int j = botw_rt_dup(c->index); if (j >= 0) { botw_first = *c; botw_first.index = j; c = &botw_first; } }
+     int f = S.rt.has_cview[c->index] && S.rt.cview[c->index].set_format ? S.rt.cview[c->index].format : S.rt.color[c->index]->d.format;
+     VkClearValue v = color_value(vk_fmt_class(f), c->rgba);
+     int full = clear_full();

@@ -453,6 +453,22 @@ int vk_fg_interpolating(void) {
     if (atomic_load_explicit(&fg_config,memory_order_relaxed) < 0) (void)vk_fg_enabled();
     return atomic_load_explicit(&fg_config,memory_order_relaxed) >= 2;
 }
+/* TOTK_FG_STATIC_HOLD: absent/"1" on, "0" off (the camera interpolation shader's
+ * previous output exactly; framegen_interp.frag constant 1). Parsed once and
+ * logged once; any other spelling is treated as on and named in the log. */
+int vk_fg_static_hold(void) {
+    static _Atomic int on=-1;
+    int v=atomic_load_explicit(&on,memory_order_relaxed);
+    if (v>=0) return v;
+    const char *e=getenv("TOTK_FG_STATIC_HOLD");
+    v=!(e && !strcmp(e,"0"));
+    int expected=-1;
+    if (atomic_compare_exchange_strong(&on,&expected,v))
+        LOGV("framegen camera interpolation: screen-static hold %s (TOTK_FG_STATIC_HOLD=%s)%s",
+            v ? "on" : "off",e ? e : "unset",e && strcmp(e,"0") && strcmp(e,"1") ? "; not 0 or 1, treated as on" : "");
+    else v=expected;
+    return v;
+}
 int vk_fg_locked(void) {
     if (atomic_load_explicit(&fg_config,memory_order_relaxed) < 0) (void)vk_fg_enabled();
     return atomic_load_explicit(&fg_config,memory_order_relaxed) == 4;
@@ -908,9 +924,11 @@ static int fg_make_pipeline(VkFormat format, VkPipeline *pipeline, int interp) {
     VkPipelineShaderStageCreateInfo stages[2] = {
         {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage=VK_SHADER_STAGE_VERTEX_BIT, .module=module[0], .pName="main"},
         {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage=VK_SHADER_STAGE_FRAGMENT_BIT, .module=module[1], .pName="main"}};
-    VkBool32 scene_scale=vk_scene_post_enabled();
-    VkSpecializationMapEntry entry={.constantID=0,.offset=0,.size=sizeof scene_scale};
-    VkSpecializationInfo spec={.mapEntryCount=1,.pMapEntries=&entry,.dataSize=sizeof scene_scale,.pData=&scene_scale};
+    /* constant 1: framegen_interp.frag's screen-static hold (other shaders ignore it). */
+    VkBool32 constants[2]={vk_scene_post_enabled(),(VkBool32)vk_fg_static_hold()};
+    VkSpecializationMapEntry entry[2]={{.constantID=0,.offset=0,.size=sizeof(VkBool32)},
+        {.constantID=1,.offset=sizeof(VkBool32),.size=sizeof(VkBool32)}};
+    VkSpecializationInfo spec={.mapEntryCount=2,.pMapEntries=entry,.dataSize=sizeof constants,.pData=constants};
     if (interp) stages[1].pSpecializationInfo=&spec;
     VkPipelineVertexInputStateCreateInfo vi = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
     VkPipelineInputAssemblyStateCreateInfo ia = {VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,

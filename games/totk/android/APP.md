@@ -240,6 +240,17 @@ visual-quality pass or a59.8Hz claim**. Use the camera/play profile until that
 integration failure is resolved. Model GPU time and submitted/generated counters
 alone are not on-screen cadence authority.
 
+**Camera interpolation keeps screen-static pixels (`TOTK_FG_STATIC_HOLD`, default on).** The camera engine
+(also LSFG's fallback while it warms up, cools down or is refused: overlay `FG LSFG->CAMERA ...`) warps each real
+frame by the camera alone. Link and his horse at a gallop move WITH the camera: both real frames show them at the
+same pixel, but each warp moved them by half the camera motion in opposite directions and the blend drew two
+translucent copies about 40 px apart on every generated frame (Thor recording 2026-11-16: the horse-riding shake,
+background correct). `framegen_interp.frag` now keeps the unwarped average where the two real frames agree at the
+same screen position and camera-relative depth (5 taps, depth within the 4% blend ratio) and either agree almost
+exactly or clearly better than the two warped samples. Moving scenery differs at a fixed pixel and keeps the camera
+result. `TOTK_FG_STATIC_HOLD=0` restores the previous shader output (specialization constant 1 off);
+`vkframegentest --interp-hold` / `--interp-hold-off` check both.
+
 `TOTK_LSFG_WIDE_BARRIERS=1` is an off-by-default diagnostic matching the mask
 replacement reported in [Mesa issue 16406](https://gitlab.freedesktop.org/mesa/mesa/-/work_items/16406).
 For existing backend `BarrierBuilder` image barriers, both source and destination

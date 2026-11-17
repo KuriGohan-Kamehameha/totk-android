@@ -19,6 +19,7 @@ void vk_fg_track_result(unsigned result);
 int vk_fg_enabled(void);
 /* Cached selected interpolation mode, retained through per-pair refusals. */
 int vk_fg_interpolating(void);
+int vk_fg_static_hold(void);  /* TOTK_FG_STATIC_HOLD: camera interpolation keeps screen-static pixels */
 /* Explicit fixed-real30 mode; immutable selection also sizes presenter ownership. */
 int vk_fg_locked(void);
 int vk_fg_adaptive(void); /* exact opt-in; captured UI, target-time generation */

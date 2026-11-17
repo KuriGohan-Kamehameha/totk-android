@@ -18,6 +18,16 @@ layout(push_constant) uniform Push {
     vec4 row[8]; // Row-major N clip -> midpoint clip, then N+1 -> midpoint.
 } pc;
 layout(constant_id=0) const bool scene_scale=false;
+// TOTK_FG_STATIC_HOLD (default on). The two warps know only the camera. A surface
+// that moves WITH the camera (Link and his horse at a gallop, the paraglider) is
+// screen-static: both real frames show it at the same pixel, but each camera warp
+// moves it by half the camera motion in opposite directions, and the blend draws
+// two translucent copies on every generated frame (horse-riding "shake"). Hold a
+// pixel only when the two real frames agree at the SAME screen position, at the
+// same camera-relative depth, and either they are near-identical there or that
+// agreement is clearly better than the two warped samples'. Moving scenery
+// differs at a fixed pixel, so it keeps the camera result.
+layout(constant_id=1) const bool static_hold=false;
 
 // Matrix inversion/raster UV roundoff must not invent sub-texel contrast in an
 // identity warp. EASU's direction estimate amplifies those tiny false gradients.
@@ -105,6 +115,32 @@ bool candidate(sampler2D scene,sampler2D depth_image,int which,int base,
     rgb=scene_sample(scene,source);
     return !any(isnan(rgb)) && !any(isinf(rgb));
 }
+// Relative colour difference: linear HDR values, scaled by the brighter one.
+float color_error(vec3 a,vec3 b) {
+    const vec3 luma=vec3(0.2126,0.7152,0.0722);
+    return length(a-b)/(0.05+max(dot(a,luma),dot(b,luma)));
+}
+// Mean unwarped difference over the pixel and four neighbours two texels away,
+// so a single coincidentally equal texel of moving texture cannot qualify.
+bool static_pair(out vec3 held,out float error) {
+    held=vec3(0.0); error=1e9;
+    float a_depth=texture(first_depth,uv).r,b_depth=texture(second_depth,uv).r;
+    if (!valid_depth(a_depth) || !valid_depth(b_depth)) return false;
+    float a=1.0-a_depth,b=1.0-b_depth;
+    if (max(a,b)>min(a,b)*1.04) return false; // same FG_INTERP_DEPTH_RATIO as the blend
+    vec2 texel=2.0/vec2(textureSize(first_scene,0));
+    const vec2 offsets[5]=vec2[5](vec2(0,0),vec2(-1,0),vec2(1,0),vec2(0,-1),vec2(0,1));
+    float sum=0.0;
+    for (int i=0;i<5;i++) {
+        vec2 q=clamp(uv+offsets[i]*texel,vec2(0.0),vec2(1.0));
+        vec3 x=scene_sample(first_scene,q),y=scene_sample(second_scene,q);
+        if (any(isnan(x)) || any(isinf(x)) || any(isnan(y)) || any(isinf(y))) return false;
+        if (i==0) held=(x+y)*0.5;
+        sum+=color_error(x,y);
+    }
+    error=sum*0.2;
+    return true;
+}
 void main() {
     vec3 first_rgb=vec3(0.0),second_rgb=vec3(0.0);
     float first_z=1.0,second_z=1.0;
@@ -128,6 +164,16 @@ void main() {
         else scene=first_z<second_z ? first_rgb : second_rgb;
     } else if (first_valid) scene=first_rgb;
     else if (second_valid) scene=second_rgb; // One-sided disocclusion, no stale blend.
+    vec3 held; float held_error;
+    if (static_hold && !unsafe && (first_valid || second_valid) && static_pair(held,held_error) && held_error<=0.08) {
+        // Near-identical real frames at this pixel: holding is the true midpoint for
+        // anything screen-static and indistinguishable from the warp elsewhere; the
+        // two warps can agree with EACH OTHER on wrong content (both land on the
+        // same stripe of a displaced pattern). Otherwise hold only when both warps
+        // are valid and disagree clearly more than the unwarped pair.
+        float warped_error=first_valid && second_valid ? color_error(first_rgb,second_rgb) : 0.0;
+        if (held_error<=0.03 || (first_valid && second_valid && warped_error>held_error*2.0+0.04)) scene=held;
+    }
     vec3 black,white;
     if (scene_scale) {
         black=texelFetch(ui_black,ivec2(gl_FragCoord.xy),0).rgb;

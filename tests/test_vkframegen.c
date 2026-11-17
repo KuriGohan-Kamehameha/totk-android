@@ -1,7 +1,7 @@
 /* Actual Vulkan camera/depth shader acceptance, no game data or Android device.
    Link with the same backend objects/libs as test_vkpost, plus vk_framegen.c.
    Run modes in fresh processes include --off, --refused, --budget, --late,
-   --interp, --interp-static, --interp-replay-buffers, --interp-depth-range, --interp-depth-range-nativeui, --interp-nativeui,
+   --interp, --interp-static, --interp-hold, --interp-hold-off, --interp-replay-buffers, --interp-depth-range, --interp-depth-range-nativeui, --interp-nativeui,
    --interp-authority, --interp-job-reuse, --interp-authority-ordering [normal|lag], --interp-dilation,
    --interp-authority-ordering-lag, --interp-headroom, --interp-present,
    --interp-uncertified, --interp-uncertified-off, --interp-uncertified-invalid,
@@ -1151,6 +1151,73 @@ static int run_interp(int device) {
     vk_gpu_idle(); mtl_tex_release(&f.scene_desc); mtl_tex_release(&f.depth_desc); mtl_tex_release(&f.final_desc);
     if (f.native) { mtl_tex_release(&f.native_desc); free(f.native_pixels); }
     fixture_replay_destroy(&f); vkDestroyPipeline(V.dev,affine_ui,NULL);
+    free(f.pool.mem); free(f.scene_pixels); free(f.depth_pixels); free(f.depth_baseline); free(f.final_pixels); free(pixels);
+    return failures ? 1 : 0;
+}
+/* Horse riding (2026-11-16, Thor recording): Link and the horse move WITH the
+   camera, so both real frames show them at the same pixel while the camera
+   translates. Camera-only warps move such a surface by half the camera motion in
+   opposite directions and the blend drew two translucent copies on every
+   generated frame. A near striped "rider" (z=1.5) is identical at the same screen
+   position in both frames; the background keeps the per-frame phase colours of
+   the translated-midpoint golden, so its expected camera blend is unchanged. */
+#define HOLD_X0 20u
+#define HOLD_X1 90u
+#define HOLD_Y0 95u
+#define HOLD_Y1 170u
+static void interp_hold_rider(unsigned x, float rgb[3]) {
+    int odd=(x/4)&1;
+    rgb[0]=odd ? 0.80f : 0.10f; rgb[1]=odd ? 0.20f : 0.60f; rgb[2]=odd ? 0.10f : 0.80f;
+}
+static void fixture_interp_hold_pixels(fixture *f, unsigned frame) {
+    fixture_interp_pixels(f,frame);
+    for (unsigned y=HOLD_Y0;y<HOLD_Y1;y++) for (unsigned x=HOLD_X0;x<HOLD_X1;x++) {
+        size_t i=(size_t)y*W+x;
+        interp_hold_rider(x,f->scene_pixels+4*i);
+        for (unsigned c=0;c<3;c++) f->final_pixels[4*i+c]=encoded_channel(f->scene_pixels[4*i+c]);
+        f->depth_pixels[i]=fg_test_depth(1.5);
+    }
+    fixture_resample_depth(f);
+}
+static int run_interp_hold(int off) {
+    setenv("TOTK_FRAMEGEN","interp",1); setenv("TOTK_FRAMEGEN_BUDGET_MS","10000",1);
+    if (off) setenv("TOTK_FG_STATIC_HOLD","0",1); else unsetenv("TOTK_FG_STATIC_HOLD");
+    mtl_init();
+    CHECK(vk_fg_interpolating(),"screen-static hold uses production interpolation");
+    CHECK(vk_fg_static_hold()==!off,"TOTK_FG_STATIC_HOLD %s selects hold %s",off ? "=0" : "unset",off ? "off" : "on");
+    fixture f; fixture_create(&f); f.ui_repeats=1;
+    const float white[4]={1,1,1,1};
+    vk_post_output out; uint8_t *pixels=malloc(PIXELS*4);
+    CHECK(pixels!=NULL,"allocate hold output pixels"); if (!pixels) exit(1);
+    float camera[84];
+    fixture_interp_hold_pixels(&f,0); fixture_upload(&f); fixture_interp_ui(&f,white);
+    fg_test_camera(camera,0,-0.16,0,0);
+    CHECK(!real_frame(&f,camera,0,0,&out),"first real frame of the translated pair captures history");
+    fixture_interp_hold_pixels(&f,1); fixture_upload(&f); fixture_interp_ui(&f,white);
+    fg_test_camera(camera,0,0.16,0,0);
+    CHECK(real_frame(&f,camera,3,0,&out),"translated pair with a camera-locked rider generates a midpoint");
+    CHECK(f.completed && out.image,"hold pair completes");
+    if (out.image) {
+        read_image(out.image,VK_IMAGE_ASPECT_COLOR_BIT,pixels,PIXELS*4);
+        /* Background: the analytic camera midpoint, exactly as in run_interp. */
+        float rgb[3]; interp_expected_scene(0,1,100,60,0.0225*W,-0.0225*W,3,rgb);
+        check_interp_linear(pixels,100,60,rgb,"background keeps the depth-reprojected camera midpoint");
+        unsigned held=0,total=0;
+        /* z=1.5: each warp moves 0.03 UV (9.6 px), inside the shader 0.04 UV limit as on the
+           Thor recording (~40 px of 1280); 18 px from each edge exceeds it. */
+        for (unsigned y=HOLD_Y0+18;y<HOLD_Y1-18;y++) for (unsigned x=HOLD_X0+18;x<HOLD_X1-18;x++) {
+            float r[3]; interp_hold_rider(x,r);
+            const uint8_t *p=pixels+((size_t)y*W+x)*4;
+            int ok=1;
+            for (unsigned c=0;c<3;c++) if (abs((int)p[c]-(int)encoded_channel(r[c]))>1) ok=0;
+            held+=ok; total++;
+        }
+        if (off) CHECK(held<total/2,"hold off: camera warps displace the rider (the shipped ghost; %u of %u interior pixels exact)",held,total);
+        else CHECK(held==total,"hold on: every interior rider pixel is the real rider, no displaced copy (%u of %u exact)",held,total);
+    }
+    check_sources_unchanged(&f);
+    vk_gpu_idle(); mtl_tex_release(&f.scene_desc); mtl_tex_release(&f.depth_desc); mtl_tex_release(&f.final_desc);
+    fixture_replay_destroy(&f);
     free(f.pool.mem); free(f.scene_pixels); free(f.depth_pixels); free(f.depth_baseline); free(f.final_pixels); free(pixels);
     return failures ? 1 : 0;
 }
@@ -3866,6 +3933,8 @@ int main(int argc, char **argv) {
                  argc==2 && !strcmp(argv[1],"--locked-refuse-budget") ? run_locked_config(2) :
                  argc==2 && !strcmp(argv[1],"--locked-refuse-realtime") ? run_locked_config(3) :
                  argc==2 && !strcmp(argv[1],"--interp-static") ? run_interp_static() :
+                 argc==2 && !strcmp(argv[1],"--interp-hold") ? run_interp_hold(0) :
+                 argc==2 && !strcmp(argv[1],"--interp-hold-off") ? run_interp_hold(1) :
                  argc==2 && !strcmp(argv[1],"--interp-replay-buffers") ? run_interp_replay_buffers() :
                  argc==2 && !strcmp(argv[1],"--interp-depth-range") ? run_interp_depth_range() :
                  argc==2 && !strcmp(argv[1],"--interp-depth-range-nativeui") ? run_interp_nativeui(1) :

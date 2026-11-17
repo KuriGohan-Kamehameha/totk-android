@@ -33,10 +33,17 @@ The companion packages ship no game art: their images are drawn by code (ASSETS.
 the Tears of the Kingdom package's text files only name files of the game. Game icons, the map, the fonts and all text
 are read at run time from the player's own game files.
 
-Source. The complete corresponding source of libduo_host.so is the directory games/totk/duo of the source tree this
-app was built from, at the commit named in assets/build.txt (shown in the app's About screen): the vendored Eden Duo
-and companion files at the commits above (games/totk/duo/vendor, with every local change listed in its README.md),
-the port's shim and host code, and the build script (CMakeLists.txt, driven by games/totk/android/Makefile).
-Anyone who passes this APK on must make that source available as section 6 of the licence requires.
+Source. The complete corresponding source of this APK is the whole source tree of this project at the commit named in
+assets/build.txt (shown in the app's About screen) -- all of it, not only the directory games/totk/duo: libduo_host.so
+also compiles games/totk/runtime/companion_state.h, and it is built by games/totk/android/Makefile and
+games/totk/duo/CMakeLists.txt under games/totk/android/build_release.py, which take the game's title and module from
+games/games.toml (tools/games.py). The tree holds the vendored Eden Duo and companion files at the commits above
+(games/totk/duo/vendor, with every local change listed in its README.md), the port's shim and host code, the rest of the
+app, and its build scripts, which fetch the other third-party sources at pinned commits and name the two prebuilt
+inputs (the Turnip driver: its recipe is games/totk/android/turnip; the shader translator: games/totk/tools/totk_xlate).
+Where to get it: the section "Source of this APK" at the top of this file, written by the build, names the repository
+and the full commit; that commit (browsable at <repository>/tree/<commit>, downloadable as
+<repository>/archive/<commit>.tar.gz) is the corresponding source. Anyone who passes this APK on must make that source
+available as section 6 of the licence requires.
 
 There is NO WARRANTY, to the extent permitted by law; see sections 15 and 16 of the licence.

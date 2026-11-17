@@ -54,7 +54,8 @@ Which module a build links, and the sources it needs besides its own file, are s
 `DUO_TITLE` (`games/games.toml` `title_id` and `duo.module`, passed by `android/Makefile`).
 
 The commit above is on a fork that must be public, with that branch pushed, before any APK built from it is released:
-the notice (`../NOTICE.txt`) names it as where the vendored companion code comes from.
+the notice (`../NOTICE.txt`) names it as where the vendored companion code comes from. `build_release.py --check-source
+<apk>` fetches it (and Eden Duo's commit and the APK's own) and fails until it is public.
 
 ## Local changes
 

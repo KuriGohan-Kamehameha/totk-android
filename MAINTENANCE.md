@@ -35,7 +35,7 @@ Generated from `games/games.toml` (`python3 tools/games.py table`; the test chec
 | `menu_emblem` | The emblem the menu draws (Widgets.Emblem; the launcher art is launcher_art): 'island' = the sky island above twin peaks, 'sheikah_eye' = the Sheikah eye (app-assets/icon/make_icon_botw.py drawn in Java) | `island` | `sheikah_eye` |
 | `mod_manager` | The PC mod manager the Mods import texts name (its merge is what the import takes) | `TKMM` | `BCML` |
 | `companion` | Second screen (CompanionContent): 'map' = TotK Native's own map and inventory (CompanionView, MIT, drawn from the art the setup generates; compiled into every app, shown by none at the moment), 'duo' = the Eden Duo page drawn by libduo_host.so (DuoSurfaceView). Both sit behind CompanionScreen. With 'duo' the setup does not offer or update the second-screen art (ArtPolicy.used) | `duo` | `duo` |
-| `gpl_companion` | Whether the APK carries the GPL-3.0 Eden Duo companion (libduo_host.so, its package under assets/duo/, Eden licence texts), which makes the APK as a whole GPL-3.0-or-later (duo/NOTICE.txt; build_release.py then refuses a build from a commit with uncommitted changes). false: the build and audit_apk.py refuse all of it | `true` | `true` |
+| `gpl_companion` | Whether the APK carries the GPL-3.0 Eden Duo companion (libduo_host.so, its package under assets/duo/, Eden licence texts), which makes the APK as a whole GPL-3.0-or-later (duo/NOTICE.txt; build_release.py then refuses a release from a commit with uncommitted changes or without a source repository). false: the build and audit_apk.py refuse all of it | `true` | `true` |
 | `duo` | The Eden Duo companion of a gpl_companion game: package = the folder under duo/vendor/companions/packages that the APK carries as assets/duo/<package>/dualscreen (build_release.py; audit_apk.py compares it byte for byte), module = the title module's main source under duo/vendor/companions (android/Makefile passes it with title_id to duo/CMakeLists.txt, which adds the sources that module needs) | `{"package": "TearsOfTheKingdom", "module": "native/modules/0100F2C0115B6000.cpp"}` | `{"package": "BreathOfTheWild", "module": "native/modules/01007EF00011E000.cpp"}` |
 | `tablet_can_be_missing` | Whether the game starts without its tablet (BotW's Sheikah Slate; the stick LEDs have a look for that) | `false` | `true` |
 | `bifrost_looks` | Row of BifrostLooks.LOOKS the stick-LED bridge uses (colour table) | `TOTK` | `BOTW` |
@@ -44,7 +44,7 @@ Flavours (`build_release.py --game <game> --flavour <flavour>`):
 
 | Game | Flavour | Package | Launcher label | Version | Code | Key | Repository | Release tag, asset |
 |---|---|---|---|---|---|---|---|---|
-| `totk` | `fork` | `io.github.kurigohankamehameha.totk` | TotK Native (fork) | `1.0.1-fork.2` | 10002 | `fork-release.p12` | KuriGohan-Kamehameha/totk-android | `v<version>`, `TotK-Native-<version>.apk` |
+| `totk` | `fork` | `io.github.kurigohankamehameha.totk` | TotK Native (fork) | `1.0.1-fork.3` | 10003 | `fork-release.p12` | KuriGohan-Kamehameha/totk-android | `v<version>`, `TotK-Native-<version>.apk` |
 | `totk` | `dev` | `io.github.kurigohankamehameha.totk.dev` | TotK Native (dev) | `1.0.1-dev` | clock | `totk-dev.pem` | KuriGohan-Kamehameha/totk-android | `v<version>`, `TotK-Native-<version>.apk` |
 | `botw` | `release` | `io.github.p1r4n351.botw` | BotW Native | `0.2.0-pre.1` | 200 | `botw-release.pem` | P1R4N351/botw-android | `botw-v<version>`, `BotW-Native-<version>.apk` |
 | `botw` | `dev` | `io.github.p1r4n351.botw` | BotW Native | `0.2.0-dev` | clock | `botw-dev.pem` | P1R4N351/botw-android | `botw-v<version>`, `BotW-Native-<version>.apk` |
@@ -96,9 +96,14 @@ latest release only (one HEAD, `UpdateRules`), for its own package, and only fro
 build never asks). Every APK is audited (`apk/audit_apk.py`): a game with `gpl_companion = false` must not carry
 `libduo_host.so`, an Eden Duo package or its licence texts, and one with it (today both) carries only its own package
 (`duo.package`), byte for byte the vendored one. Both APKs carry `libduo_host.so` and are therefore GPL-3.0-or-later as
-a whole (`games/totk/duo/NOTICE.txt`): a release is built only from a commit without local changes, and that commit,
-with the vendored companions' commit it names, must be public wherever the APK is published. One build at a time on
-the 8 GB build machine (`JOBS=4`, `DUO_JOBS=2`).
+a whole (`games/totk/duo/NOTICE.txt`): a release is built only from a commit without local changes, and only with a
+source repository (the flavour's `repository`, or `--source-repository`). The build writes a *Source of this APK*
+section (that repository and the full commit) at the head of `assets/licenses/Eden-Duo.txt`; the audit requires it,
+`Eden-Duo-third-party.txt` and `build.txt` in every APK with the library, and for a release a repository and a clean
+commit. Before publishing, push that commit to the repository it names (and the vendored commits to theirs), then run
+`build_release.py --check-source <apk>`: it fetches every repository and commit the notice names (the APK's own, Eden
+Duo's, the companions fork's) and fails while any is missing. Publish the APK only after it passes. One build at a time
+on the 8 GB build machine (`JOBS=4`, `DUO_JOBS=2`).
 
 ## Tests
 

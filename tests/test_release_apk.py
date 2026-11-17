@@ -30,6 +30,8 @@ def apk(path, entries, stored=()):
     return path
 
 
+REPOSITORY = 'https://github.com/KuriGohan-Kamehameha/totk-android'
+COMMIT = '85f12832ab12' + '0' * 28
 GOOD = {'AndroidManifest.xml': b'\x03\x00', 'classes.dex': b'dex\n035', 'resources.arsc': b'\x02\x00',
         'META-INF/MANIFEST.MF': b'Manifest-Version: 1.0', 'META-INF/CERT.SF': b'sf', 'META-INF/CERT.RSA': b'rsa',
         'res/mipmap-xxxhdpi/ic_launcher.png': b'\x89PNG', 'res/mipmap-anydpi-v26/ic_launcher.xml': b'\x03\x00',
@@ -82,12 +84,21 @@ class AuditTests(unittest.TestCase):
         stored = self.audit({**GOOD, 'assets/shader_list.tsv': committed}, stored=('assets/shader_list.tsv',))
         self.assertTrue(any('must be compressed' in p for p in stored))
 
-    def duo_entries(self, game):
-        """libduo_host.so and a few files of the game's own package (games.toml duo.package), as build_release packs them."""
+    def duo_entries(self, game, notices=True):
+        """libduo_host.so and a few files of the game's own package (games.toml duo.package), as build_release packs them,
+        with the GPL notice (its "Source of this APK" section) and the commit it names (notices=False: the package alone)."""
         package, prefix = audit_apk.duo_package(game)
         names = {'botw160': ['manifest.json', 'ASSETS.provenance.json', '8E9978D50BDD20B4.json', 'assets/pov-cone.png'],
                  'v143': ['manifest.json', 'ASSETS.provenance.json', 'map_tiles.txt', 'totk_font.txt', 'assets/cmdbar-228x112-normal.png']}[game]
-        return {'lib/arm64-v8a/libduo_host.so': ELF, **{prefix + n: (package / n).read_bytes() for n in names}}, prefix
+        entries = {'lib/arm64-v8a/libduo_host.so': ELF, **{prefix + n: (package / n).read_bytes() for n in names}}
+        return ({**entries, **self.notices()} if notices else entries), prefix
+
+    @staticmethod
+    def notices(repository=REPOSITORY, commit=COMMIT, built=None):
+        """The Eden Duo licence texts and build.txt of a build from commit, its source published in repository."""
+        built = built or (commit[:12] + ('-dirty' if commit.endswith('-dirty') else ''))
+        return {'assets/licenses/Eden-Duo.txt': (release.source_section(repository, commit) + 'Eden Duo companion host\n').encode(),
+                'assets/licenses/Eden-Duo-third-party.txt': b'zstd BSD\n', 'assets/build.txt': f'commit {built}\n'.encode()}
 
     def test_eden_duo_companion_carries_the_games_own_package(self):
         """Each gpl_companion game (games.toml: both) may carry libduo_host.so and its own package (games/totk/duo/vendor,
@@ -100,7 +111,8 @@ class AuditTests(unittest.TestCase):
                 duo, prefix = self.duo_entries(game)
                 self.assertEqual(run({**GOOD, **duo}), [])
                 self.assertEqual(run(GOOD), [])   # the companion is optional: the app starts without the library
-                foreign = {k: v for k, v in self.duo_entries(other)[0].items() if not k.startswith('lib/')}
+                foreign = self.duo_entries(other, notices=False)[0]
+                del foreign['lib/arm64-v8a/libduo_host.so']
                 for name, data in foreign.items():
                     self.assertTrue(any('not on the allowlist' in p for p in run({**GOOD, **duo, name: data})), name)
                 png = next(n for n in duo if n.endswith('.png'))
@@ -126,9 +138,69 @@ class AuditTests(unittest.TestCase):
             for game in ('v143', 'botw160'):
                 duo, _ = self.duo_entries(game)
                 for name, data in duo.items():
+                    if name == 'assets/build.txt':
+                        continue   # every build has one
                     with self.subTest(game=game, name=name):
                         found = audit_apk.audit(apk(self.dir / f'{len(os.listdir(self.dir))}.apk', {**GOOD, name: data}), game=game)
-                        self.assertTrue(any('not on the allowlist' in p for p in found))
+                        self.assertTrue(any(('not on the allowlist' if 'licenses/' not in name else 'without gpl_companion') in p
+                                            for p in found), (name, found))
+
+    def test_eden_duo_companion_needs_its_notice_and_source(self):
+        """An APK with libduo_host.so or the package is GPL-3.0-or-later as a whole: it must carry Eden-Duo.txt, whose
+        "Source of this APK" section names the build.txt commit, Eden-Duo-third-party.txt and build.txt. A release must
+        also name a public repository and a commit without uncommitted changes."""
+        run = lambda entries, release=False: audit_apk.audit(apk(self.dir / f'{len(os.listdir(self.dir))}.apk', entries),
+                                                             game='v143', release=release)
+        duo, prefix = self.duo_entries('v143', notices=False)
+        self.assertEqual(run({**GOOD, **duo, **self.notices()}, release=True), [])
+        for missing in ('assets/licenses/Eden-Duo.txt', 'assets/licenses/Eden-Duo-third-party.txt', 'assets/build.txt'):
+            for part in ({'lib/arm64-v8a/libduo_host.so': ELF}, {k: v for k, v in duo.items() if k.startswith(prefix)}):
+                with self.subTest(missing=missing, part=sorted(part)[0]):
+                    entries = {**GOOD, **part, **self.notices()}
+                    del entries[missing]
+                    self.assertIn(f'{missing}: missing (the APK carries the GPL Eden Duo companion)', run(entries))
+        # the notice must name the build.txt commit, and come from source_section
+        other = self.notices(commit='0123456789ab' + '0' * 28, built='85f12832ab12')
+        self.assertTrue(any('not the build.txt commit' in p for p in run({**GOOD, **duo, **other})))
+        bare = {**self.notices(), 'assets/licenses/Eden-Duo.txt': b'Eden Duo companion host\n'}
+        self.assertTrue(any('no "Source of this APK" section' in p for p in run({**GOOD, **duo, **bare})))
+        # a developer build: no repository, uncommitted changes; fine, but never as a release
+        dev = self.notices(repository=None, commit=COMMIT + '-dirty')
+        self.assertEqual(run({**GOOD, **duo, **dev}), [])
+        found = run({**GOOD, **duo, **dev}, release=True)
+        self.assertTrue(any('uncommitted changes' in p for p in found), found)
+        self.assertTrue(any('must name the repository' in p for p in found), found)
+        self.assertEqual(release.source_section(None, COMMIT).splitlines()[2], '  Repository:  none (a developer build, not for distribution)')
+        self.assertEqual(audit_apk.source_of(release.source_section(REPOSITORY + '.git/', COMMIT) + 'x'), (REPOSITORY, COMMIT))
+        self.assertIn(f'{REPOSITORY}/archive/{COMMIT}.tar.gz', release.source_section(REPOSITORY, COMMIT))
+
+    def test_check_source_fetches_every_named_commit(self):
+        """--check-source: the APK's own repository and commit and every vendored one Eden-Duo.txt names must be
+        fetchable (and a named branch must exist) before the APK is published."""
+        from unittest import mock
+        import subprocess
+        notice = (ROOT / 'games/totk/duo/NOTICE.txt').read_text()
+        entries = {**self.notices(), 'assets/licenses/Eden-Duo.txt': (release.source_section(REPOSITORY, COMMIT) + notice).encode()}
+        path = apk(self.dir / 'check.apk', entries)
+        calls = []
+        def run(cmd, **kw):
+            calls.append(cmd)
+            missing = 'P1R4N351/eden-duo-companions' in ' '.join(cmd)   # the fork, not pushed yet
+            return subprocess.CompletedProcess(cmd, 1 if missing else 0, stdout='' if missing else 'x refs/heads/b\n',
+                                               stderr='fatal: not found' if missing else '')
+        with mock.patch.object(release.subprocess, 'run', run), mock.patch.object(release, 'say', lambda *a: None):
+            problems = release.check_source(path)
+        fetched = {(c[-2], c[-1]) for c in calls if 'fetch' in c}
+        self.assertIn((REPOSITORY, COMMIT), fetched)
+        self.assertIn(('https://github.com/igawa6/eden-duo', '9ebc508f2ccf938487217857918a82f42c9c0304'), fetched)
+        fork = [u for u, _ in fetched if 'eden-duo-companions' in u]
+        self.assertEqual(fork, ['https://github.com/P1R4N351/eden-duo-companions'])
+        self.assertTrue(any(c[:3] == ['git', 'ls-remote', '--heads'] and c[-1] == 'totk-companion' for c in calls))
+        self.assertTrue(any('eden-duo-companions: commit' in p and 'cannot be fetched' in p for p in problems), problems)
+        self.assertTrue(any('no branch totk-companion' in p for p in problems), problems)
+        self.assertEqual(len(problems), 2, problems)
+        dev = apk(self.dir / 'dev.apk', self.notices(repository=None))
+        self.assertIn('names no repository', release.check_source(dev)[0])
 
     def test_release_stages_the_games_own_package(self):
         """build_release.stage_assets packs games.toml duo.package minus load plans; what it stages passes the audit."""
@@ -137,14 +209,17 @@ class AuditTests(unittest.TestCase):
         for game, name in (('totk', 'TearsOfTheKingdom'), ('botw', 'BreathOfTheWild')):
             with self.subTest(game=game):
                 release.GAME = release.games.values(game)
-                stage = release.stage_assets(self.dir / f'stage-{game}', {'TotK-Native.txt': 'MIT\n'}, commit='85f12832ab12')
+                texts = {'TotK-Native.txt': 'MIT\n', 'Eden-Duo.txt': release.source_section(REPOSITORY, COMMIT) + 'GPL\n',
+                         'Eden-Duo-third-party.txt': 'BSD\n'}
+                stage = release.stage_assets(self.dir / f'stage-{game}', texts, commit='85f12832ab12')
                 packages = sorted(p.name for p in (stage / 'duo').iterdir())
                 self.assertEqual(packages, [name])
                 staged = sorted(str(p.relative_to(stage)) for p in (stage / 'duo').rglob('*') if p.is_file())
                 self.assertIn(f'duo/{name}/dualscreen/manifest.json', staged)
                 self.assertFalse(any('load-plans' in s for s in staged))
+                staged += ['build.txt', 'licenses/Eden-Duo.txt', 'licenses/Eden-Duo-third-party.txt']
                 entries = {f'assets/{s}': (stage / s).read_bytes() for s in staged}
-                found = audit_apk.audit(apk(self.dir / f'staged-{game}.apk', {**GOOD, **entries}), game=game)
+                found = audit_apk.audit(apk(self.dir / f'staged-{game}.apk', {**GOOD, **entries}), game=game, release=True)
                 self.assertEqual(found, [])
 
     def test_gpl_release_refuses_uncommitted_changes(self):
@@ -169,8 +244,13 @@ class AuditTests(unittest.TestCase):
             with self.assertRaises(Built):
                 release.app(release=False, make_key=True, **args)
         with mock.patch.object(release, 'source_commit', lambda: '85f12832ab12'), mock.patch.object(release, 'build_native', build_native):
-            with self.assertRaises(Built):
+            # GPL-3.0 section 6: a release says where its source is (the flavour's repository, --source-repository)
+            with self.assertRaisesRegex(release.BuildError, 'needs the repository its commit is published in'):
                 release.app(release=True, **args)
+            with self.assertRaises(Built):
+                release.app(release=True, source_repository=REPOSITORY, **args)
+            with self.assertRaises(Built):
+                release.app(release=False, make_key=True, **args)
 
     def test_turnip_must_be_the_pinned_build(self):
         self.assertTrue(any('pinned Turnip' in p for p in self.audit({**GOOD, 'lib/arm64-v8a/libtotk_turnip.so': ELF})))

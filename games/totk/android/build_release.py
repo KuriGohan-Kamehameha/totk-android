@@ -7,7 +7,10 @@
                                                 [--version-code N] [--version-name X]   (default 1.0.0 / 10000)
     python3 games/totk/android/build_release.py --game {totk,botw} --flavour {fork,release,dev} --ndk <ndk> --turnip <so>
                                                 (package, label, version, key and launcher art from games/games.toml)
-    python3 games/totk/android/build_release.py --audit <apk> [--game botw]   (only the content audit)
+    python3 games/totk/android/build_release.py --audit <apk> [--game botw] [--dev-key]   (only the content audit;
+                                                --dev-key: the rules of a developer build)
+    python3 games/totk/android/build_release.py --check-source <apk>   (before publishing a gpl_companion game's APK:
+                                                every source its Eden-Duo.txt names can be fetched; needs network)
 
 What goes in (all built here, or fetched at pinned sources, except the two prebuilt inputs named below):
   - libtotk.so (the 1.4.3 runtime, android/Makefile VERSION=v143 DEV_BUILD=0) with libopus and libvpx (pinned sources),
@@ -62,6 +65,11 @@ def semver_code(name):
 def parse_args(argv):
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0], formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--audit', type=Path, metavar='APK', help='only audit an existing APK and exit')
+    ap.add_argument('--check-source', type=Path, metavar='APK',
+                    help='only check that every repository and commit the APK\'s Eden-Duo.txt names is public, and exit')
+    ap.add_argument('--source-repository', metavar='URL',
+                    help='where the build.txt commit is published (the APK\'s corresponding source; default: the '
+                    'flavour\'s repository); a release of a gpl_companion game needs one')
     ap.add_argument('--ndk', type=Path, default=os.environ.get('ANDROID_NDK_HOME') or os.environ.get('ANDROID_NDK_ROOT'))
     ap.add_argument('--turnip', type=Path, help=f'the pinned Mesa Turnip driver.so (sha256 {TURNIP_SHA256})')
     ap.add_argument('--key', type=Path, help='release signing key + certificate (PEM, or PKCS#12 .p12/.pfx); never generated')
@@ -80,7 +88,7 @@ def parse_args(argv):
     ap.add_argument('--label', help='launcher name (default: build_apk.py\'s)')
     ap.add_argument('--dev-key', action='store_true', help='debuggable build; --key is created when missing (never for a public release)')
     args = ap.parse_args(argv)
-    if not args.audit:
+    if not args.audit and not args.check_source:
         missing = [n for n in ('ndk', 'turnip') + (() if args.flavour else ('key',)) if not getattr(args, n)]
         if missing:
             ap.error('needs ' + ', '.join('--' + n for n in missing))
@@ -387,7 +395,7 @@ def package(*, out, dex, libs, translator, turnip, assets, key, key_pass_env=Non
         Path(out).unlink()
         raise
     say('signatures: ' + '; '.join(line.split(' scheme ')[0].split()[-1] for line in schemes) + ' verified by apksigner')
-    problems = audit_apk.audit(out, game=VERSION)
+    problems = audit_apk.audit(out, game=VERSION, release=release)
     if problems:
         Path(out).unlink()
         raise BuildError('APK audit failed, APK removed:\n  ' + '\n  '.join(problems))
@@ -402,7 +410,7 @@ def audit_entries(apk):
 
 
 def app(*, work, ndk, logs, out, key, key_pass_env=None, make_key=False, release=True, turnip=None, translator=None,
-        android_sdk=None, version_code=None, version_name=None, jobs=os.cpu_count() or 4):
+        android_sdk=None, version_code=None, version_name=None, jobs=os.cpu_count() or 4, source_repository=None):
     """The whole app from the repository: native libraries, translator, dex, assets, signed and audited APK. Shared by the
     public release (release=True, the caller's key and the pinned Turnip) and build_android.py --apk (a debuggable build
     signed with the work folder's developer key)."""
@@ -415,12 +423,19 @@ def app(*, work, ndk, logs, out, key, key_pass_env=None, make_key=False, release
             raise BuildError(f'{GAME["app_name"]} carries the GPL Eden Duo companion: commit the changes first '
                              f'(build.txt must name a commit that can be published as its source; HEAD is {commit})')
         say(f'warning: building from uncommitted changes ({commit}); this APK must not be distributed (GPL source)')
+    if GAME['gpl_companion'] and release and not source_repository:
+        # GPL-3.0 section 6: the APK must say where its corresponding source is (Eden-Duo.txt, source_section).
+        raise BuildError(f'{GAME["app_name"]} carries the GPL Eden Duo companion: a release needs the repository its '
+                         'commit is published in (the flavour\'s repository, or --source-repository)')
     work.mkdir(parents=True, exist_ok=True)
     libs = build_native(work, ndk, logs, release=release, jobs=jobs)
     libs = strip_debug(libs, work, ndk, logs)   # every APK passes the same audit; the full libraries stay in <work>/symbols
     xlate = release_translator(translator, work, ndk, logs)
     dex = build_classes(android_sdk, work / 'classes.dex', logs)
-    assets = stage_assets(work / 'apk-stage/assets', licence_texts(work, ndk), commit=commit)
+    texts = licence_texts(work, ndk)
+    if GAME['gpl_companion']:
+        texts['Eden-Duo.txt'] = source_section(source_repository, git('rev-parse', 'HEAD') + commit[12:]) + texts['Eden-Duo.txt']
+    assets = stage_assets(work / 'apk-stage/assets', texts, commit=commit)
     stamp = int(git('log', '-1', '--format=%ct'))
     # Developer builds (make_key) keep a time-based versionCode, so each one updates the previous developer build.
     name = version_name or (f'{APP_VERSION}-dev' if make_key else APP_VERSION)
@@ -428,6 +443,57 @@ def app(*, work, ndk, logs, out, key, key_pass_env=None, make_key=False, release
                    key=key, key_pass_env=key_pass_env, make_key=make_key, release=release,
                    version_code=version_code or (int(time.time()) // 60 if make_key else semver_code(name)),
                    version_name=name, timestamp=stamp, logs=logs, android_sdk=android_sdk)
+
+
+def source_section(repository, commit):
+    """The head of Eden-Duo.txt: where this APK's corresponding source is (duo/NOTICE.txt "Source."). repository: where
+    the commit is published (None: a developer build, not for distribution); commit: the full HEAD commit, '-dirty'
+    when built with uncommitted changes. audit_apk.source_of reads it back; --check-source fetches it."""
+    lines = ['Source of this APK', '==================']
+    if repository:
+        repository = repository.rstrip('/').removesuffix('.git')
+        lines += [f'  Repository:  {repository}', f'  Commit:      {commit}',
+                  f'  Browse:      {repository}/tree/{commit}', f'  Download:    {repository}/archive/{commit}.tar.gz',
+                  '  That commit\'s whole source tree is the complete corresponding source of this APK (see "Source." below).']
+    else:
+        lines += ['  Repository:  none (a developer build, not for distribution)', f'  Commit:      {commit}']
+    return '\n'.join(lines) + '\n\n'
+
+
+def check_source(apk):
+    """Findings (empty: all public) for the sources an APK's Eden-Duo.txt names: its own repository and commit (the
+    "Source of this APK" section) and every vendored component (an https URL, an optional branch, then "commit <hash>").
+    Each commit is fetched by hash (no blobs) from its repository, and a named branch must exist there. Needs network;
+    run it after pushing and before publishing the APK."""
+    import re, tempfile, zipfile
+    with zipfile.ZipFile(apk) as z:
+        try:
+            text = z.read('assets/licenses/Eden-Duo.txt').decode()
+        except KeyError:
+            return ['assets/licenses/Eden-Duo.txt: missing (not an APK with the Eden Duo companion)']
+    own = audit_apk.source_of(text)
+    if not own or not own[0]:
+        return ['Eden-Duo.txt names no repository for this APK (a developer build)']
+    sources = [(own[0], None, own[1])] + [
+        (m.group(1), m.group(2), m.group(3)) for m in
+        re.finditer(r'(https://github\.com/[\w.-]+/[\w.-]+?)(?:\.git)?\s+(?:branch\s+(\S+)\s+)?commit\s+([0-9a-f]{40})\b', text)]
+    problems = []
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(['git', 'init', '-q', '--bare', tmp], check=True)
+        for url, branch, commit in dict.fromkeys(sources):
+            if commit.endswith('-dirty'):
+                problems.append(f'{url}: {commit} is not a commit (built with uncommitted changes)'); continue
+            fetched = subprocess.run(['git', '-C', tmp, 'fetch', '-q', '--depth=1', '--filter=blob:none', url, commit],
+                                     capture_output=True, text=True, timeout=600)
+            if fetched.returncode:
+                problems.append(f'{url}: commit {commit} cannot be fetched ({fetched.stderr.strip().splitlines()[-1:] or "no answer"})')
+            if branch:
+                heads = subprocess.run(['git', 'ls-remote', '--heads', url, branch], capture_output=True, text=True, timeout=120)
+                if heads.returncode or not heads.stdout.strip():
+                    problems.append(f'{url}: no branch {branch}')
+            say(f'source: {url} {"branch " + branch + " " if branch else ""}{commit}: '
+                f'{"public" if not fetched.returncode else "NOT public"}')
+    return problems
 
 
 def source_commit():
@@ -439,8 +505,16 @@ def source_commit():
 
 def main(argv):
     args = parse_args(argv)
+    if args.check_source:
+        problems = check_source(args.check_source)
+        for p in problems:
+            print(f'{args.check_source}: {p}')
+        if problems:
+            raise BuildError('the APK names source that is not public: publish it before the APK')
+        say(f'source: everything {args.check_source} names is public')
+        return
     if args.audit:
-        problems = audit_apk.audit(args.audit, game=args.game)
+        problems = audit_apk.audit(args.audit, game=args.game, release=not args.dev_key)
         for p in problems:
             print(f'{args.audit}: {p}')
         if problems:
@@ -488,8 +562,10 @@ def main(argv):
     t0 = time.time()
     app(work=work, ndk=ndk, logs=logs, out=out, key=key, key_pass_env=key_pass_env, release=not dev_key, make_key=dev_key, turnip=turnip,
         translator=args.translator, android_sdk=args.android_sdk, version_code=version_code, version_name=version_name,
-        jobs=args.jobs)
+        jobs=args.jobs, source_repository=args.source_repository or flavour.get('repository'))
     say(f'done in {(time.time() - t0) / 60:.0f} min: {out} (sha256 {sha256(out)})')
+    if GAME['gpl_companion'] and not dev_key:
+        say(f'before publishing: push the commit, then build_release.py --check-source {out}')
 
 
 if __name__ == '__main__':

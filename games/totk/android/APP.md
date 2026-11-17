@@ -1505,7 +1505,11 @@ offers, builds or updates the second-screen art (`ArtPolicy.used`); the art stag
 distributed under GPL-3.0-or-later (`games/totk/duo/NOTICE.txt`, packed as `assets/licenses/Eden-Duo.txt`): a release
 must come with its complete corresponding source, the commit named in `assets/build.txt` (About), public wherever the
 APK is published, and the vendored companions' commit must be public too. `build_release.py` refuses a release from a
-tree with uncommitted changes. The runtime, the Java app and the tools stay MIT; APKs released before this change are
+tree with uncommitted changes or without a source repository (the flavour's `repository`), and writes that repository
+and the full commit at the head of `Eden-Duo.txt` ("Source of this APK"); the audit requires that section, and
+`build_release.py --check-source <apk>` must pass (every commit the notice names is fetchable) before the APK is
+published (MAINTENANCE.md, *Build and release*). The fork flavour moved to `1.0.1-fork.3` (10003) with this change, so
+no MIT build and GPL build share a version. The runtime, the Java app and the tools stay MIT; APKs released before this change are
 unaffected.
 
 **The MIT companion below** (`CompanionView`, the snapshot JSON, item actions, the setup's art) stays compiled into the

@@ -129,7 +129,7 @@ totk = "duo"
 botw = "duo"
 
 [var.gpl_companion]
-meaning = "Whether the APK carries the GPL-3.0 Eden Duo companion (libduo_host.so, its package under assets/duo/, Eden licence texts), which makes the APK as a whole GPL-3.0-or-later (duo/NOTICE.txt; build_release.py then refuses a build from a commit with uncommitted changes). false: the build and audit_apk.py refuse all of it"
+meaning = "Whether the APK carries the GPL-3.0 Eden Duo companion (libduo_host.so, its package under assets/duo/, Eden licence texts), which makes the APK as a whole GPL-3.0-or-later (duo/NOTICE.txt; build_release.py then refuses a release from a commit with uncommitted changes or without a source repository). false: the build and audit_apk.py refuse all of it"
 totk = true
 botw = true
 
@@ -158,8 +158,8 @@ botw = "BOTW"
 [flavour.totk.fork]
 package = "io.github.kurigohankamehameha.totk"
 label = "TotK Native (fork)"
-version_name = "1.0.1-fork.2"
-version_code = 10002
+version_name = "1.0.1-fork.3"
+version_code = 10003
 key = "fork-release.p12"
 key_pass_file = "fork-release.pass"
 debuggable = false

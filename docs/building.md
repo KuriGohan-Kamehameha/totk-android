@@ -31,6 +31,10 @@ python3 games/totk/android/build_release.py --ndk <Android NDK r28> --turnip <Tu
 ## Release checklist
 
 - Build from a clean committed checkout with the release key; keep the APK's commit and SHA-256 with the test results.
+- The APK carries the GPL Eden Duo companion and is GPL-3.0-or-later as a whole: it names its source repository and
+  full commit at the head of `assets/licenses/Eden-Duo.txt` (the flavour's `repository`, or `--source-repository`).
+  Push that commit there (and any vendored commit the notice names to its repository), then run
+  `build_release.py --check-source <apk>`; publish only when it passes.
 - Publish a **full release, not a pre-release**, tagged **`vX.Y.Z`**, so GitHub's `releases/latest` endpoint sees it.
   Keep the exact asset names **`TotK-Native-<ver>.apk`** and **`TotK-Native-<ver>.apk.sha256`**; automatic updates
   derive these names. The checksum file must be `sha256sum` format: `<64 hex>  TotK-Native-<ver>.apk`.

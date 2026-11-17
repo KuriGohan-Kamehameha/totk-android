@@ -262,7 +262,8 @@ and shown in the app under *About → Open-source licences*.
 
 MIT (see [LICENSE](LICENSE)), except the Eden Duo companion integration under `games/totk/duo`, which is GPL-3.0; the
 BotW Native APK and the TotK Native APK, which both include it, are distributed under GPL-3.0-or-later (each release
-with its corresponding source: the commit named in the APK's About screen). Third-party code keeps its own license:
+with its corresponding source: the commit named in the APK's About screen, in the repository named at the head of its
+`assets/licenses/Eden-Duo.txt`). Third-party code keeps its own license:
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Legal

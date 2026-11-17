@@ -4,11 +4,16 @@ native libraries, our fonts and licence texts, the identifier-only pipeline key 
 the game (images, text, fonts, shaders, tables, rewritten code, companion art, the old Control-NCA launcher icon) or like
 key material. build_release.py runs it on every APK it makes and stops on any finding.
 
-    audit_apk.py [--game botw] <apk> [<apk> ...]   exit 1 and one line per finding when something is wrong
+    audit_apk.py [--game botw] [--release] <apk> [<apk> ...]   exit 1 and one line per finding when something is wrong
 
 --game <game> (build_release.py passes its own; default totk): a game whose gpl_companion is true in games/games.toml
 (today both) may carry the Eden Duo companion host and its own package (games.toml duo.package), byte for byte the
-vendored one; another game's package, or any of it in a game without gpl_companion, is a finding.
+vendored one; another game's package, or any of it (the library, the package, the Eden-Duo*.txt licence texts) in a
+game without gpl_companion, is a finding. An APK that carries the library or the package must also carry its GPL
+notice (Eden-Duo.txt, whose "Source of this APK" section names the build.txt commit, and Eden-Duo-third-party.txt) and
+assets/build.txt.
+--release (build_release.py passes it for every non-debuggable build): that notice must name a public repository and a
+commit without uncommitted changes, as GPL-3.0 section 6 needs for an APK that is passed on.
 """
 import re, sys, zipfile
 from pathlib import Path
@@ -46,6 +51,7 @@ ALLOWED = [re.compile(p) for p in (
 # map tiles and the font the module reads from the player's files), no game art, and every entry must be byte for byte
 # the vendored file.
 DUO_LIB = 'libduo_host.so'
+DUO_NOTICES = ('assets/licenses/Eden-Duo.txt', 'assets/licenses/Eden-Duo-third-party.txt')
 DUO_PACKAGES = Path(__file__).resolve().parents[2] / 'duo/vendor/companions/packages'
 
 
@@ -53,6 +59,19 @@ def duo_package(game):
     """(vendored dualscreen folder, its prefix in the APK) of a game's Eden Duo package."""
     name = games.values(game)['duo']['package']
     return DUO_PACKAGES / name / 'dualscreen', f'assets/duo/{name}/dualscreen/'
+
+
+def source_of(notice):
+    """(repository or None, commit) from the "Source of this APK" section build_release.source_section puts at the head
+    of Eden-Duo.txt; None when the text has no such section."""
+    lines = notice.splitlines()
+    if not lines or lines[0] != 'Source of this APK':
+        return None
+    fields = dict(re.findall(r'^  (Repository|Commit):\s+(\S.*)$', notice[:2000], re.M))
+    if 'Commit' not in fields or 'Repository' not in fields:
+        return None
+    repository = fields['Repository']
+    return (repository if repository.startswith('https://') else None), fields['Commit']
 
 
 def allowed_duo(prefix):
@@ -80,13 +99,15 @@ ELF_MAGIC = b'\x7fELF'
 HOST_PATH = re.compile(rb'/(home|Users)/[A-Za-z0-9_.-]+/')
 
 
-def audit(apk, game='totk'):
+def audit(apk, game='totk', release=False):
     """Findings for one APK (empty when it passes). game: the build it claims to be (id or version tag); only a game with
-    gpl_companion may carry the Eden Duo companion, with its own package (allowed_duo)."""
+    gpl_companion may carry the Eden Duo companion, with its own package (allowed_duo), and then with its GPL notice and
+    source commit (duo_notice). release: a build to be passed on (the notice must name published source)."""
     import hashlib
     problems = []
     duo_source, duo_assets = duo_package(game)
-    allowed = ALLOWED + (allowed_duo(duo_assets) if games.values(game)['gpl_companion'] else [])
+    gpl = games.values(game)['gpl_companion']
+    allowed = ALLOWED + (allowed_duo(duo_assets) if gpl else [])
     with zipfile.ZipFile(apk) as z:
         names = z.namelist()
         if len(set(names)) != len(names):
@@ -98,6 +119,8 @@ def audit(apk, game='totk'):
                 problems.append(f'{name}: not a plain file entry'); continue
             if not any(p.fullmatch(name) for p in allowed):
                 problems.append(f'{name}: not on the allowlist')
+            if not gpl and re.fullmatch(r'assets/licenses/Eden-Duo.*\.txt', name):
+                problems.append(f'{name}: the Eden Duo notice in a game without gpl_companion (games.toml)')
             if lower.endswith(DENIED_SUFFIXES) or path.name.lower() in DENIED_NAMES or '.patched' in lower:
                 problems.append(f'{name}: name of game data or of data derived from it')
             if any(part.lower() in DENIED_PARTS for part in path.parts[:-1]):
@@ -131,6 +154,8 @@ def audit(apk, game='totk'):
         for required in ('AndroidManifest.xml', 'classes.dex', 'lib/arm64-v8a/libtotk.so'):
             if required not in names:
                 problems.append(f'{required}: missing')
+        if gpl and any(n == f'lib/arm64-v8a/{DUO_LIB}' or n.startswith('assets/duo/') for n in names):
+            problems += duo_notice(z, names, release)
         info = {i.filename: i for i in z.infolist()}
         for name, i in info.items():
             if name.startswith('assets/') and name.lower().endswith(('.ttf', '.otf')) and i.compress_type != zipfile.ZIP_STORED:
@@ -140,15 +165,43 @@ def audit(apk, game='totk'):
     return problems
 
 
+def duo_notice(z, names, release):
+    """An APK with the Eden Duo companion is GPL-3.0-or-later as a whole (duo/NOTICE.txt): it must carry that notice and
+    the source commit, the notice must name that commit (its "Source of this APK" section), and a release must name a
+    public repository and a commit without uncommitted changes."""
+    problems = [f'{n}: missing (the APK carries the GPL Eden Duo companion)' for n in (*DUO_NOTICES, 'assets/build.txt')
+                if n not in names]
+    if problems:
+        return problems
+    built = re.fullmatch(r'commit ([0-9a-f]{7,40}(?:-dirty)?)\n', z.read('assets/build.txt').decode(errors='replace'))
+    source = source_of(z.read(DUO_NOTICES[0]).decode(errors='replace'))
+    if not built:
+        return problems   # reported above as not one "commit <hash>" line
+    if not source:
+        return [f'{DUO_NOTICES[0]}: no "Source of this APK" section (build_release.source_section)']
+    repository, commit = source
+    short, dirty = built.group(1).removesuffix('-dirty'), built.group(1).endswith('-dirty')
+    if not re.fullmatch(r'[0-9a-f]{40}(-dirty)?', commit) or not commit.startswith(short) or commit.endswith('-dirty') != dirty:
+        problems.append(f'{DUO_NOTICES[0]}: names commit {commit}, not the build.txt commit {built.group(1)}')
+    if release and dirty:
+        problems.append('assets/build.txt: a release built with uncommitted changes has no publishable source')
+    if release and not repository:
+        problems.append(f'{DUO_NOTICES[0]}: a release must name the repository its source is published in')
+    return problems
+
+
 def main(argv):
     if not argv:
         sys.exit(__doc__)
-    game = 'totk'
-    if argv[0] == '--game':
-        game, argv = argv[1], argv[2:]
+    game, release = 'totk', False
+    while argv and argv[0] in ('--game', '--release'):
+        if argv[0] == '--release':
+            release, argv = True, argv[1:]
+        else:
+            game, argv = argv[1], argv[2:]
     failed = False
     for apk in argv:
-        problems = audit(apk, game)
+        problems = audit(apk, game, release)
         for p in problems:
             print(f'{apk}: {p}')
         failed |= bool(problems)

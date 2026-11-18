@@ -2,7 +2,13 @@
 
 # TotK Native for Android
 
-[![Support me on Ko-fi](https://img.shields.io/badge/Support_me_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/J3J518XVKR)
+[![Support with Bitcoin](https://img.shields.io/badge/Support_with-Bitcoin-F7931A?style=for-the-badge&logo=bitcoin&logoColor=white)](#support)
+
+> **This fork** builds *TotK Native (fork)* (`io.github.kurigohankamehameha.totk`), which installs beside or instead
+> of the official app and adds mods import, Lossless Scaling frame generation, the Eden Duo second screen and more.
+> Releases: [KuriGohan-Kamehameha/totk-android](https://github.com/KuriGohan-Kamehameha/totk-android/releases). Its code is on the [`common`](https://github.com/KuriGohan-Kamehameha/totk-android/tree/common) branch,
+> shared with *BotW Native* ([P1R4N351/botw-android](https://github.com/P1R4N351/botw-android)); the guide for the
+> fork app is [docs/totk-native.md](https://github.com/KuriGohan-Kamehameha/totk-android/blob/common/docs/totk-native.md). This page is the original app's README.
 
 **TotK Native** (`com.aure.totk`) runs **The Legend of Zelda: Tears of the Kingdom 1.4.3** natively on Android
 handhelds with a Qualcomm Adreno GPU. It is not an emulator: the game's own code is prepared once, on your device, to
@@ -482,6 +488,12 @@ The system driver does not work (see [Requirements](#requirements)).
 - [docs/benchmarks/](docs/benchmarks/baseline-1.0.0.md): measuring performance against the recorded baselines.
 - [games/totk/android/README.md](games/totk/android/README.md), [APP.md](games/totk/android/APP.md),
   [VULKAN.md](games/totk/android/VULKAN.md), [DEBUGGING.md](games/totk/android/DEBUGGING.md): the full developer notes.
+
+## Support
+
+If this work is useful to you, donations are gratefully accepted:
+
+- Bitcoin: `bc1q4a3lqcg87rvw7vxulausdqhhuwkwwa6w6v4mxx`
 
 ## Credits
 

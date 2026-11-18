@@ -87,6 +87,7 @@ Everything not in the menu is a developer switch. A selection:
 | `TOTK_AUTOLOAD=1` | Loads the newest save again at start. |
 | `TOTK_BENCH_TIME=02:00` | Benchmark-only, launch-time 1.4.3 effective clock override; strict `HH:MM` (`00:00`–`23:59`). Absent/`off` keeps native code/data unchanged, without a veneer; any other value logs one rejection and stays off. |
 | `TOTK_COMPANION=0` | Disables the second-screen companion at runtime (no controller, display listener or poller is started). |
+| `TOTK_DUO_TOUCH=0` | Second screen (Eden Duo page, both games): ignores touches; the page still shows. Touch is on by default. |
 | `TOTK_COMPANION_LOG=1` | Logs each companion status change and the first full snapshot to `totk.log`. |
 | `TOTK_INPUT_LOG=1` | Logs each **−** / **R** overlay-chord decision as `[chord] …`. |
 | `TOTK_VK_SHOT=300` | Saves every 300th frame as a screenshot. |

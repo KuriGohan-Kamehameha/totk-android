@@ -75,7 +75,7 @@ elseif (DUO_TITLE STREQUAL "0100F2C0115B6000")
     set_source_files_properties(${ZSTD_SOURCES} PROPERTIES
         COMPILE_DEFINITIONS "ZSTD_DISABLE_ASM=1;ZSTD_MULTITHREAD=0;XXH_NAMESPACE=WONDER_")
     set(DUO_MODULE_EXTRA
-        ${MODULES}/totk_romfs.cpp ${MODULES}/wonder_assets.cpp ${MODULES}/wonder_font.cpp
+        ${MODULES}/totk_layer.cpp ${MODULES}/totk_romfs.cpp ${MODULES}/wonder_assets.cpp ${MODULES}/wonder_font.cpp
         ${MODULES}/totk_reader/companion_snapshot.c ${MODULES}/totk_reader/totk_reader_ro.c
         ${MODULES}/totk_reader/totk_gamedata.c
         ${ZSTD_SOURCES})

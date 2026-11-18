@@ -25,7 +25,7 @@ void BlitFrame(uint32_t* out, uint32_t out_w, uint32_t out_h, uint32_t stride, c
                uint32_t width, uint32_t height);
 uint64_t Ticks();
 /// One finger down at (x, y) in surface pixels, or every finger lifted (down false): the test's taps, which reach the
-/// runtime as DuoSurfaceView's do (the Android path is DuoSurfaceView.nativeTouch, off unless TOTK_DUO_TOUCH=1).
+/// runtime as DuoSurfaceView's do (the Android path is DuoSurfaceView.nativeTouch, on unless TOTK_DUO_TOUCH=0).
 void TestTouch(uint32_t x, uint32_t y, bool down);
 /// From now on the module's published numbers and texts whose names start with `prefix` are kept (port_module.cpp);
 /// until it is called nothing is (the app never calls it). TestValue: the last one published under `name`, as text

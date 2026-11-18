@@ -4,7 +4,7 @@
 > runtime as BotW Native's (`libduo_host.so`, GPL-3.0; [APP.md, *Dual-screen companion*](../games/totk/android/APP.md#dual-screen-companion)):
 > Breath of the Wild's main page with Tears of the Kingdom's values, plus Inventory and Map, drawn from the game's own
 > files at run time. Item actions (equip, eat, take out, fuse) are on the page's Inventory detail and its quick picker
-> (the gear corners), carried out by this app's own runtime as before; touch is off unless `TOTK_DUO_TOUCH=1`. The setup no longer
+> (the gear corners), carried out by this app's own runtime as before. Touch is on (`TOTK_DUO_TOUCH=0` turns it off). The setup no longer
 > prepares *Second-screen art*. The rest of this page describes the earlier companion (`CompanionView`), which stays
 > in the source, unused, until it is either brought back or removed.
 

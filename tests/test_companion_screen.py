@@ -466,5 +466,26 @@ class CompanionScreenTests(unittest.TestCase):
         self.assertIn('pass: companion shell pump', self.run_probe(classes, 'com.aure.totk.companion.PumpProbe'))
 
 
+class DuoTouchDefault(unittest.TestCase):
+    """Touch on the Eden Duo second screen is on by default for both games: a release build's game data is private, so
+    totk.env cannot be edited there and the default is what players get. TOTK_DUO_TOUCH=0 is the one way to turn it off."""
+
+    def test_touch_is_on_unless_turned_off(self):
+        host = (ROOT / 'games/totk/duo/duo_host.cpp').read_text()
+        self.assertIn('static const bool enabled = !EnvIs("TOTK_DUO_TOUCH", "0");', host)
+        self.assertNotIn('EnvIs("TOTK_DUO_TOUCH", "1")', host)
+        # one entry point for both games: no per-game branch decides it
+        entry = host[host.index('DuoSurfaceView_nativeTouch'):]
+        entry = entry[:entry.index('\n}\n')]
+        self.assertNotIn('GAME_BOTW', entry)
+        self.assertNotIn('title_id', entry)
+
+    def test_docs_say_on_by_default(self):
+        for doc in ('docs/developer-settings.md', 'docs/companion.md', 'docs/companion-waist.md', 'games/totk/android/APP.md'):
+            text = (ROOT / doc).read_text()
+            self.assertIn('TOTK_DUO_TOUCH=0', text, doc)
+            self.assertNotIn('TOTK_DUO_TOUCH=1', text, doc)
+
+
 if __name__ == '__main__':
     unittest.main()

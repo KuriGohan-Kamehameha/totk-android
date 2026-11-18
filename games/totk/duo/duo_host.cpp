@@ -610,14 +610,14 @@ DUO_EXPORT JNIEXPORT void JNICALL Java_com_aure_totk_companion_DuoSurfaceView_na
     Say("duo: second-screen surface {}", next != nullptr ? std::format("{}x{}", width, height) : std::string{"gone"});
 }
 
-/// DuoSurfaceView.nativeTouch: the pointers now down, in surface pixels (count 0: all lifted). Off unless
-/// TOTK_DUO_TOUCH=1: touch is the next milestone and has not run on a device.
+/// DuoSurfaceView.nativeTouch: the pointers now down, in surface pixels (count 0: all lifted). On by default for both
+/// games; TOTK_DUO_TOUCH=0 in totk.env turns touch off (the page then only shows).
 DUO_EXPORT JNIEXPORT void JNICALL Java_com_aure_totk_companion_DuoSurfaceView_nativeTouch(JNIEnv* env, jclass,
                                                                                          jintArray ids,
                                                                                          jfloatArray xs,
                                                                                          jfloatArray ys, jint count) {
     using namespace Duo;
-    static const bool enabled = EnvIs("TOTK_DUO_TOUCH", "1");
+    static const bool enabled = !EnvIs("TOTK_DUO_TOUCH", "0");
     if (!enabled) {
         return;
     }

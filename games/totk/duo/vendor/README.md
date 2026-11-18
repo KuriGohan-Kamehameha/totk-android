@@ -8,7 +8,7 @@ copy directly.
 | Directory | From | Commit | Licence |
 |---|---|---|---|
 | `emu/` | [Eden Duo](https://github.com/igawa6/eden-duo) | `9ebc508f2ccf938487217857918a82f42c9c0304` | GPL-3.0-or-later (`emu/LICENSE.txt`; per-file SPDX tags, texts in `emu/LICENSES/`) |
-| `companions/` | [P1R4N351/eden-duo-companions](https://github.com/P1R4N351/eden-duo-companions) branch `totk-companion`, a fork of [Eden Duo Companions](https://github.com/igawa6/eden-duo-companions): upstream `2169928d2f301aa7bb3b13777ca8a94d0e73961d` plus the Tears of the Kingdom companion (4 commits) | `85b7ab81fcf8593448102c93890ae73c389535d7` | GPL-3.0 (`companions/LICENSE`); `native/modules/totk_reader/` MIT (`totk_reader/LICENSE.MIT`) |
+| `companions/` | [P1R4N351/eden-duo-companions](https://github.com/P1R4N351/eden-duo-companions) branch `totk-companion`, a fork of [Eden Duo Companions](https://github.com/igawa6/eden-duo-companions): upstream `2169928d2f301aa7bb3b13777ca8a94d0e73961d` plus the Tears of the Kingdom companion (5 commits) | `7e3faa6e1e17d246bde5c64f4c877b28e7bb87a9` | GPL-3.0 (`companions/LICENSE`); `native/modules/totk_reader/` MIT (`totk_reader/LICENSE.MIT`) |
 | `third_party/nlohmann/` | [nlohmann/json](https://github.com/nlohmann/json) `v3.12.0` (`single_include/nlohmann`), the version Eden Duo pins in `cpmfile.json` | tag `v3.12.0` | MIT (`LICENSE.MIT`) |
 | `third_party/ankerl/` | [unordered_dense](https://github.com/martinus/unordered_dense) (`include/ankerl`), the commit Eden Duo pins | `7b55cab841` | MIT (`LICENSE`) |
 | `third_party/zstd/` | [zstd](https://github.com/facebook/zstd) `lib/`: `zstd.h`, `zstd_errors.h`, `common/`, `decompress/` (without `huf_decompress_amd64.S`: built with `ZSTD_DISABLE_ASM`), the commit Eden Duo pins in `cpmfile.json` (taken from its CPM cache) | `33618c8` | BSD / GPLv2 dual, BSD taken (`LICENSE`: the text of zstd v1.5.7, `f8745da`) |
@@ -37,7 +37,8 @@ Eden's: `../shim/` holds the port's stand-ins at the same include paths.
 - `packages/BreathOfTheWild/`: `README.md` and `dualscreen/` whole (`manifest.json`, the two per-build data files,
   `ASSETS.provenance.json`, `assets/*.png`, `load-plans/`). The APK packs `dualscreen/` without `load-plans/`
   (`android/build_release.py`); the load plans are not used yet.
-- The Tears of the Kingdom module: `native/modules/0100F2C0115B6000.cpp`, `totk_romfs.{h,cpp}`, `totk_reader/` whole
+- The Tears of the Kingdom module: `native/modules/0100F2C0115B6000.cpp`, `totk_layer.{h,cpp}` (Link's map layer, the
+  game's CalcMapLayer rule), `totk_romfs.{h,cpp}`, `totk_reader/` whole
   (MIT: TotK Native's reader, `companion_snapshot.c`, `companion.h` and `companion_state.h` byte for byte the copies in
   `../../runtime/`, which `tests/test_companion_state.py` checks, plus `game_version.h`, `totk_gamedata.*`,
   `totk_reader_ro.*`, its README and licence), `wonder_assets.{h,cpp}`, `wonder_font.{h,cpp}` and

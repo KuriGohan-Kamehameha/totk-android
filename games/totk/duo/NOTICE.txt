@@ -11,7 +11,7 @@ assets/duo/, that game's companion package. They come from the Eden Duo project:
 
   Eden Duo Companions (the title modules and their packages)
       https://github.com/P1R4N351/eden-duo-companions  branch totk-companion
-                                                      commit 85b7ab81fcf8593448102c93890ae73c389535d7
+                                                      commit 7e3faa6e1e17d246bde5c64f4c877b28e7bb87a9
       (a fork of https://github.com/igawa6/eden-duo-companions; that commit is upstream's
       2169928d2f301aa7bb3b13777ca8a94d0e73961d plus the Tears of the Kingdom companion)
       GPL-3.0 (GPL-3.0-or-later per file)

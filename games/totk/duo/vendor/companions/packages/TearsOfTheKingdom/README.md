@@ -11,7 +11,7 @@ same. The main page **is Breath of the Wild's Eden Duo Ready page, widget for wi
 the Kingdom's values**: `tools/totk/gen_manifest.py` reads `packages/BreathOfTheWild/dualscreen/
 manifest.json` and rewrites its Ready, main-menu and Loading pages with one table, instead of
 drawing a page of its own. A slot Tears of the Kingdom cannot fill yet shows Breath of the Wild's
-own empty state (`—`, `—°`, *Area unavailable*) or is left out (list below).
+own empty state (`—`, `—°`) or is left out (list below).
 
 ## Pages
 
@@ -33,8 +33,8 @@ own empty state (`—`, `—°`, *Area unavailable*) or is left out (list below)
     (the meal effect and its time left, *No buffs*) and, while the hearts are low, **Food** (what
     is missing and, on a tap, the food card: the four pouch foods closest to it, as Breath of the
     Wild ranks them); a vertical swipe turns the pane;
-  - the area caption (*Area unavailable* until an area name is read; the layer is not repeated
-    there); the command bar: **Inventory**, **Map** (two buttons centred: no Quest page yet);
+  - the area caption: none while the area is unknown (no placeholder; there is no area read yet,
+    and the layer is not repeated there); the command bar: **Inventory**, **Map** (two buttons centred: no Quest page yet);
   - the **quick picker**: a tap on the weapon, bow or shield corner opens that pouch over the page
     in Breath of the Wild's picker (panel, grid of cells with durability bars and fused materials, the
     equipped item lit and selected); a tap selects another, and the confirm bar beside *Back* shows its
@@ -112,7 +112,7 @@ Left out (`READY_DROP` in the generator), and why:
 | sensor ping glyphs, compass card | no sensor-target or nearest-shrine read yet |
 | temperature glows, dial halves and needle, clothing card | no temperature read yet (the dial shows `—°`) |
 | attack and defence numbers on the corner cards | not read yet |
-| area name, marker caption | no area read yet (*Area unavailable* shows) |
+| area name, marker caption | no area read yet: no caption under the disc (BotW's *Area unavailable* placeholder is left out) |
 | quick picker (Ready 320-571, 593-807, 864-989) and the corner and well taps | Breath of the Wild's picker runs on its module's actions; Tears of the Kingdom's own picker, in its style, replaces it (the three gear corners open it) |
 | secondary swap hint, arrow up/down hints | Tears of the Kingdom has no weapon swap; arrow selection is not offered (the condition arc is kept, as its empty track: no maximum fuse durability is read) |
 | view cone, context caption, fx probe | Breath of the Wild-only reads |

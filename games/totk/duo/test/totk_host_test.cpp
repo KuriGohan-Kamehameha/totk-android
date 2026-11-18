@@ -237,7 +237,43 @@ void Category(const char* cat, uint32_t slots, bool life, bool fuse, bool equip_
 }
 
 struct Scene { std::string name; bool menu = false, event = false, title = false; const char* layer = "Ground"; float y = 120;
-               int life = 47; bool loading = false; };
+               int life = 47; bool loading = false;
+               bool live = false;          // lay out the world object the module reads the layer rule from
+               int want_layer = -1; };     // the layer the page must show (0 Surface, 1 Sky, 2 Depths), -1 unchecked
+
+// The world object of TotK 1.4.3 as game::ui CalcMapLayer (main+0x401ad0) reads it: *(*(main+0x3a83968)+0xb8), its
+// vtable slot 0x290 = main+0x22acf4 (the base: no override), WorldParam at *(*(world+0x28)+0x150) with the main field's
+// values (UndergroundHeight -40 set, UndergroundMargin inherited = 50, SkyMargin 150 set), and the area-height grids at
+// *(world+0x218): a 20x16 sky grid (500 m cells) of 1010 with one island at 400 under the fixture's position, and a
+// 100x80 terrain grid (100 m cells) at 100 m. Synthetic numbers: the real ones are in the player's own romfs.
+void BuildWorld(uint8_t* main) {
+    auto* holder = static_cast<uint8_t*>(Alloc(0xc0));
+    auto* world = static_cast<uint8_t*>(Alloc(0x220));
+    auto* vtable = static_cast<uint8_t*>(Alloc(0x298));
+    auto* res = static_cast<uint8_t*>(Alloc(0x158));
+    auto* wp = static_cast<uint8_t*>(Alloc(0x130));
+    auto* area = static_cast<uint8_t*>(Alloc(0x370));
+    Put64(main + 0x3a83968, reinterpret_cast<uintptr_t>(holder));
+    Put64(holder + 0xb8, reinterpret_cast<uintptr_t>(world));
+    Put64(world, reinterpret_cast<uintptr_t>(vtable));
+    Put64(vtable + 0x290, reinterpret_cast<uintptr_t>(main) + 0x22acf4);
+    Put64(world + 0x28, reinterpret_cast<uintptr_t>(res));
+    Put64(res + 0x150, reinterpret_cast<uintptr_t>(wp));
+    PutF(wp + 0xec, 150); wp[0x126] = 1;      // SkyMargin
+    PutF(wp + 0x104, -40); wp[0x127] = 1;     // UndergroundHeight
+    PutF(wp + 0x108, 999); wp[0x128] = 0;     // UndergroundMargin: not set here, the game's default 50 applies
+    Put64(world + 0x218, reinterpret_cast<uintptr_t>(area));
+    const struct { int w, h; uint16_t fill; uint32_t hdr, data; } grids[] = {{20, 16, 1010, 0x340, 0x348}, {100, 80, 100, 0x360, 0x368}};
+    for (const auto& g : grids) {
+        auto* hdr = static_cast<uint8_t*>(Alloc(4));
+        hdr[2] = static_cast<uint8_t>(g.w); hdr[3] = static_cast<uint8_t>(g.h);
+        auto* data = static_cast<uint16_t*>(Alloc(size_t(g.w) * g.h * 2));
+        for (int i = 0; i < g.w * g.h; ++i) data[i] = g.fill;
+        if (g.w == 20) data[((-1102 + 4000) / 500) * 20 + (-254 + 5000) / 500] = 400;   // an island over Link
+        Put64(area + g.hdr, reinterpret_cast<uintptr_t>(hdr));
+        Put64(area + g.data, reinterpret_cast<uintptr_t>(data));
+    }
+}
 
 uint8_t* g_pouch = nullptr;   // the pause-menu byte lives at +0x1fcc0 (the overlay scenes flip it)
 void BuildGame(uint8_t* main, const Scene& sc) {
@@ -319,6 +355,7 @@ void BuildGame(uint8_t* main, const Scene& sc) {
     Put64(main + EVENT_SLOT, reinterpret_cast<uintptr_t>(event_mgr));
     const uint64_t flags = (sc.loading ? 0ull : 1ull) | 1ull << 33;   // bit 0 clear: a save is loading
     std::memcpy(player_state + 0x658, &flags, 8);
+    if (sc.live) BuildWorld(main);
     if (sc.title) return; // GameData, but no player actor: the title screen
     auto *module = static_cast<uint8_t*>(Alloc(0x200)), *scene = static_cast<uint8_t*>(Alloc(0x60)),
          *components = static_cast<uint8_t*>(Alloc(30 * 8)), *resident = static_cast<uint8_t*>(Alloc(0x30)),
@@ -398,6 +435,18 @@ int main(int argc, char** argv) {
     if (sc.name == "sky") { sc.layer = "Sky"; sc.y = 1500; }
     if (sc.name == "depths") { sc.layer = "UnderGround"; sc.y = -900; }
     if (sc.name == "food") sc.life = 14;   // low hearts: the Food page and card
+    // Link's layer is decided from his position as the game does (totk_layer.h), never from MapData.CurrentLayer,
+    // which the fixtures below set to something else on purpose (the owner saw "Sky on the ground", 2026-11-17).
+    // Without a world object the module uses the romfs's MainField.beco; with one ("live-*"), the live grids.
+    if (sc.name == "skyflag") { sc.layer = "Sky"; sc.y = 120; sc.want_layer = 0; }        // on the ground, flag Sky
+    if (sc.name == "chasm") { sc.layer = "Ground"; sc.y = -66; sc.want_layer = 2; }       // just past the Depths line
+    if (sc.name == "cave") { sc.layer = "UnderGround"; sc.y = -64; sc.want_layer = 0; }   // just above it
+    if (sc.name == "live-ground") { sc.live = true; sc.layer = "Sky"; sc.y = 120; sc.want_layer = 0; }
+    if (sc.name == "live-island") { sc.live = true; sc.layer = "Ground"; sc.y = 311; sc.want_layer = 1; }  // over 400 - 90
+    if (sc.name == "live-falling") { sc.live = true; sc.layer = "Sky"; sc.y = 309; sc.want_layer = 0; }    // under it
+    if (sc.name == "live-depths") { sc.live = true; sc.layer = "Sky"; sc.y = -900; sc.want_layer = 2; }
+    if (sc.name == "sky") sc.want_layer = 1;
+    if (sc.name == "depths") sc.want_layer = 2;
     sc.loading = sc.name == "loading";
     const size_t main_size = 0x3b00000;
     auto* const main_image = static_cast<uint8_t*>(mmap(nullptr, main_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0));
@@ -440,7 +489,7 @@ int main(int argc, char** argv) {
         port.request = FakeRequestOne;
         port.result = FakeResult;
     }
-    if (actions || actions_off) Duo::TestWatch("totk.");
+    if (actions || actions_off || sc.want_layer >= 0) Duo::TestWatch("totk.");
     if (!duo_host_start(&port)) return 1;
     Duo::SetSurfaceSize(1240, 1080, true);
     std::vector<uint32_t> latest;
@@ -557,6 +606,19 @@ int main(int argc, char** argv) {
         ok &= Save(out + "-food-card.png", latest, w, h);
         Tap(620, 600, latest, w, h); Run(30, latest, w, h);  // a tap on the card closes it
         ok &= Save(out + "-food-closed.png", latest, w, h);
+    }
+    if (sc.want_layer >= 0) {
+        // one layer for every user: the module's value, the header, the minimap's and the Map page's tiles
+        static const char* const Header[] = {"Surface", "Sky", "Depths"};
+        static const char Tile[] = {'G', 'S', 'U'};
+        const std::string layer = Duo::TestValue("totk.layer"), header = Duo::TestValue("totk.ready.header.text"),
+                          mini = Duo::TestValue("totk.mini.tile.0"), page = Duo::TestValue("totk.map.tile.0");
+        const std::string want_tile = std::string{"map/"} + Tile[sc.want_layer] + "/";
+        const bool layer_ok = layer == std::to_string(sc.want_layer) && header == Header[sc.want_layer] &&
+                              mini.find(want_tile) != std::string::npos && page.find(want_tile) != std::string::npos;
+        std::fprintf(stderr, "test: layer %s header '%s' minimap %s map %s (want %d)%s\n", layer.c_str(), header.c_str(),
+                     mini.c_str(), page.c_str(), sc.want_layer, layer_ok ? "" : " FAIL");
+        ok &= layer_ok;
     }
     Duo::Stop();
     // The common state of the scene's last sample, from the module's totk.status / totk.state.* (duo_state.h).

@@ -77,7 +77,9 @@ READY_DROP = [
     ({137, 138, 139} | span(156, 158), 'temperature glows: no temperature read yet'),
     (span(141, 148), 'weather forecast page: the right pager carries Buffs and Food (spec C25)'),
     (span(152, 155), 'temperature dial halves and needle: no temperature read yet (the dial shows its empty state)'),
-    ({164, 165}, 'area name and map-marker caption: no area read yet ("Area unavailable" shows, as Breath of the Wild)'),
+    ({164, 165}, 'area name and map-marker caption: no area read yet'),
+    ({87}, '"Area unavailable" placeholder: owner 2026-11-17, an unknown area shows no caption at all (when an area read '
+           'exists, keep 164/165 gated on totk.ready.area.valid and leave this one out)'),
     ({169}, 'left pager swipes: one left page (Sages) until quests are read'),
     (span(171, 176), 'three-dot right pager: at most two right pages (Buffs, Food)'),
     (span(190, 193), 'attack and defence numbers on the corner cards: not read yet'),
@@ -191,7 +193,7 @@ MODULE_ACTIONS = {'totk.act', 'totk.select'}
 UNREAD = {
     'totk.ready.environment.valid': 'temperature (BR dial shows "—°")',
     'totk.ready.temperature.text': 'temperature',
-    'totk.ready.area.valid': 'area name (the caption shows "Area unavailable")',
+    'totk.ready.area.valid': 'area name (no caption is shown while it is unknown)',
     'totk.state.shrine.active': 'in-shrine state (the disc never gives way to the shrine panel)',
     'totk.state.unknown': 'Breath of the Wild\'s "unknown context" (TotK\'s reader reports loading instead)',
 }

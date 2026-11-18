@@ -167,7 +167,7 @@ signature to stay the same between the two samples.
 | B-S06 | package and data folders | `D/duo_port.h:35-38,50-51`; `R/duo_port.c:134-152`; `J/DuoSurfaceView.java:88-130` | APK `assets/duo/` unpacked to `files/duo/`, `.ready` written last | at start |
 | B-S07 | font, text, layout | `M/botw_msbt_reflow.h:494-512`; `P/manifest.json` | `romfs:` sources (`Font_US.sbfarc`, `Msg_USen`) | at run time |
 | B-S08 | surface | `D/duo_host.cpp:510-588` | `nativeSurface` → presenter thread, CPU blit | per new page frame |
-| B-S09 | touch | `D/duo_host.cpp:590-630` | `nativeTouch` → `AuxRouting`; **off unless `TOTK_DUO_TOUCH=1`** | per MotionEvent |
+| B-S09 | touch | `D/duo_host.cpp:590-630` | `nativeTouch` → `AuxRouting`; on by default, **off with `TOTK_DUO_TOUCH=0`** | per MotionEvent |
 | B-S10 | settings | `R/duo_port.c:125-128,92,111,144` | `TOTK_DUO`, `TOTK_COMPANION`, `TOTK_DUO_AFFINITY`, `_LIB`, `_DIR` | at start |
 | B-S11 | build identity | `R/duo_port.c:137-141`; `D/port_module.cpp:84-117` | title id plus NSO build id, checked by the manifest and the module | at start |
 | B-S12 | host queries | `M/botw_bridge.h:97-145` | `get_text("__page")`, `get_i64("__aux_present")`, `__mailbox_epoch` (Eden runtime) | per tick |

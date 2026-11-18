@@ -52,6 +52,7 @@ extern "C" {
 #include "totk_reader/totk_gamedata.h"
 #include "totk_reader/totk_reader_ro.h"
 #include "totk_native_actions.h"
+#include "totk_layer.h"
 #include "totk_romfs.h"
 #include "wonder_assets.h"
 #include "wonder_font.h"
@@ -420,6 +421,15 @@ private:
     std::unordered_map<std::string, std::string> names;
     std::atomic<bool> text_ready{false};
 
+    // Link's map layer, decided as the game decides it (totk_layer.h); never MapData.CurrentLayer
+    void UpdateLayer(uintptr_t main);
+    TotkLayer::Params layer_grids;            // live grids, kept while the area-height object stays the same
+    std::uint64_t layer_grids_key = 0;
+    std::optional<TotkLayer::Params> layer_romfs;   // MainField.beco from the romfs (text thread; under text_mutex)
+    int layer_last = TotkLayer::Ground;
+    bool layer_live_seen = false;
+    int layer_logged = -1;
+
     // images (asset worker)
     std::mutex image_mutex;
     WonderAssets::AstcDecoder astc{};
@@ -490,7 +500,58 @@ void Module::LoadText() {
         names = std::move(all);
         break;
     }
+    // The main field's area-height grids, for the map layer while the live ones cannot be read
+    if (const auto pack = romfs->Read("Pack/Bootup.Nin_NX_NVN.pack.zs"))
+        if (const auto beco = WonderAssets::SarcMember(*pack, "WorldMgr/AreaHeight/MainField.beco")) {
+            TotkLayer::Params p;
+            if (TotkLayer::ParseBeco(*beco, p)) {
+                std::scoped_lock lock{text_mutex};
+                layer_romfs = std::move(p);
+            }
+        }
     text_ready = true;
+}
+
+// Replaces the snapshot's "layer" (MapData.CurrentLayer, a saved UI value: "Sky on the ground", 2026-11-17) with the
+// game's own rule over Link's position. Every user of the layer reads this one value: the minimap and Map page tiles,
+// the header and the Shrine/Lightroot dial. In a world that is not the main field (shrines, interiors) the last
+// main-field layer stays; before any live read the romfs grids stand in.
+void Module::UpdateLayer(uintptr_t main) {
+    const auto pos = model.player.find("pos");
+    if (pos == model.player.end() || !pos->is_array() || pos->size() != 3)
+        return;   // no position: keep the snapshot's value
+    const float x = (*pos)[0].get<float>(), y = (*pos)[1].get<float>(), z = (*pos)[2].get<float>();
+    int layer = layer_last;
+    const char* source = "kept";
+    if (const auto live = TotkLayer::ReadLive(main, GuestRead, layer_grids, layer_grids_key)) {
+        layer = TotkLayer::Calc(*live, x, y, z);
+        layer_live_seen = true;
+        source = "live";
+    } else if (!layer_live_seen) {
+        std::optional<TotkLayer::Params> rom;
+        {
+            std::scoped_lock lock{text_mutex};
+            rom = layer_romfs;
+        }
+        if (rom) {
+            layer = TotkLayer::Calc(*rom, x, y, z);
+            source = "romfs";
+        } else {
+            TotkLayer::Params plain;   // no grids yet: the main field's Depths line only, never Sky
+            plain.have_area_height = false;
+            layer = TotkLayer::Calc(plain, x, y, z);
+            source = "plain";
+        }
+    }
+    layer_last = layer;
+    static constexpr const char* Names[] = {"Ground", "Sky", "UnderGround"};
+    model.player["layer"] = Names[layer];
+    const int logged = layer * 4 + (source[0] == 'l' ? 0 : source[0] == 'r' ? 1 : source[0] == 'p' ? 2 : 3);
+    if (logged != layer_logged && host.log) {
+        layer_logged = logged;
+        const std::string line = std::string{"TotK map layer: "} + Names[layer] + " (" + source + ")";
+        host.log(host.userdata, EDEN_DSMOD_LOG_INFO, line.c_str());
+    }
 }
 
 std::string Module::ItemName(const std::string& actor) const {
@@ -530,6 +591,7 @@ void Module::Read(bool full) {
         return;
     }
     model.player = root.value("player", json::object());
+    UpdateLayer(main);
     const auto n = Native();
     if (static_cast<int>(n.has_value()) != native_logged) {   // which route item actions take, once per change
         native_logged = n.has_value();

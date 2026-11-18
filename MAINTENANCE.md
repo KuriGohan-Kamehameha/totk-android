@@ -44,7 +44,7 @@ Flavours (`build_release.py --game <game> --flavour <flavour>`):
 
 | Game | Flavour | Package | Launcher label | Version | Code | Key | Repository | Release tag, asset |
 |---|---|---|---|---|---|---|---|---|
-| `totk` | `fork` | `io.github.kurigohankamehameha.totk` | TotK Native (fork) | `1.0.1-fork.3` | 10003 | `fork-release.p12` | KuriGohan-Kamehameha/totk-android | `v<version>`, `TotK-Native-<version>.apk` |
+| `totk` | `fork` | `io.github.kurigohankamehameha.totk` | TotK Native (fork) | `1.0.1-fork.4` | 10004 | `fork-release.p12` | KuriGohan-Kamehameha/totk-android | `v<version>`, `TotK-Native-<version>.apk` |
 | `totk` | `dev` | `io.github.kurigohankamehameha.totk.dev` | TotK Native (dev) | `1.0.1-dev` | clock | `totk-dev.pem` | KuriGohan-Kamehameha/totk-android | `v<version>`, `TotK-Native-<version>.apk` |
 | `botw` | `release` | `io.github.p1r4n351.botw` | BotW Native | `0.2.0-pre.1` | 200 | `botw-release.pem` | P1R4N351/botw-android | `botw-v<version>`, `BotW-Native-<version>.apk` |
 | `botw` | `dev` | `io.github.p1r4n351.botw` | BotW Native | `0.2.0-dev` | clock | `botw-dev.pem` | P1R4N351/botw-android | `botw-v<version>`, `BotW-Native-<version>.apk` |
